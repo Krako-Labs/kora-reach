@@ -1,0 +1,26 @@
+$ kora reach "Fix the failing tests in this repo"
+
+KORA route: coding -> local verification first
+Test command: npm test
+
+FAIL  add
+Expected: 5
+Actual:  -1
+
+Local verification failed -> frontier escalation 1/2
+
+Codex: fixed add() to use addition instead of subtraction.
+Codex verification: npm test -> PASS
+
+KORA verification: npm test
+PASS  add
+
+Task completed ✓
+
+Total KORA actions             6
+Local operations               2
+Deterministic routing          3
+Cached / reused                0
+Frontier escalations           1
+
+83% handled without frontier-model escalation

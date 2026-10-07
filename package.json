@@ -1,0 +1,20 @@
+{
+  "name": "kora-reach",
+  "version": "0.1.0",
+  "description": "AI automation without token anxiety. Deterministic-first local agent that escalates only when needed.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=22.12.0" },
+  "bin": { "kora": "./bin/kora.js" },
+  "files": ["bin", "src", "README.md", "LICENSE", "NOTICE"],
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check bin/kora.js && node --check src/core.js && node --check scripts/make-demo-repo.mjs && node --check scripts/make-file-demo.mjs && npm test",
+    "demo:fixture": "node scripts/make-demo-repo.mjs",
+    "demo:files": "node scripts/make-file-demo.mjs"
+  },
+  "repository": { "type": "git", "url": "git+https://github.com/Krako-Labs/kora-reach.git" },
+  "homepage": "https://github.com/Krako-Labs/kora-reach#readme",
+  "bugs": { "url": "https://github.com/Krako-Labs/kora-reach/issues" },
+  "keywords": ["ai-agent", "local-agent", "codex", "automation", "deterministic", "openai", "cli"]
+}

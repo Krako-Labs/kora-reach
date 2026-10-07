@@ -1,0 +1,7 @@
+KORA Reach
+Copyright 2026 KrakenNet Labs / Krako Labs
+
+This project can optionally invoke the separately installed OpenAI Codex CLI.
+OpenAI Codex is not bundled with KORA Reach and is licensed separately by its authors.
+
+OpenAI, ChatGPT, and Codex are trademarks of OpenAI.
