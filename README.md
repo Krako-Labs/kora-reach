@@ -12,6 +12,16 @@ This is not yet the tagged stable release. See
 
 The v0.1 stable release below remains a standalone CLI.
 
+For the v0.2 preview, clone the feature branch and run the Phase A Mac setup:
+
+    git clone https://github.com/Krako-Labs/kora-reach.git
+    cd kora-reach
+    git switch feat/chatgpt-mcp-computer-control
+    node scripts/setup-mac.mjs
+
+The installer configures a local service and restricted workspace, but does not expose the Mac online. ChatGPT connection still requires secure HTTPS or Tunnel and explicit approval. See [Phase A installation](docs/PHASE_A_INSTALL.md) and [business models](docs/BUSINESS_MODELS.md).
+
+
     kora reach "Fix the failing tests in this repo"
 
 KORA Reach is a small, CLI-first local agent. It does not send every step to a model.
