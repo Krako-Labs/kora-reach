@@ -1,0 +1,240 @@
+import os from "node:os";
+import path from "node:path";
+
+export interface AppConfig {
+  host: string;
+  port: number;
+  endpoint: string;
+  publicUrl: string | undefined;
+  allowedHosts: string[] | undefined;
+  trustProxyHops: number;
+  authToken: string | undefined;
+  allowNoAuth: boolean;
+  oauthEnabled: boolean;
+  oauthApprovalKey: string | undefined;
+  oauthIssuerUrl: string | undefined;
+  oauthResourceUrl: string | undefined;
+  oauthStateFile: string;
+  oauthAccessTokenTtlSeconds: number;
+  oauthRefreshTokenTtlSeconds: number;
+  oauthAuthorizationCodeTtlSeconds: number;
+  defaultCwd: string;
+  defaultShell: string;
+  maxRequestBody: string;
+  maxOutputBytes: number;
+  maxRetainedProcessOutputBytes: number;
+  processRetentionMs: number;
+  maxProcesses: number;
+  maxFileChunkBytes: number;
+  maxEditFileBytes: number;
+  reachConsoleEnabled: boolean;
+  reachConsolePath: string;
+  reachStateDirectory: string;
+  reachNodeName: string;
+  reachPolicyFile?: string;
+}
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === "") {
+    return fallback;
+  }
+  if (["1", "true", "yes", "on"].includes(value.toLowerCase())) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(value.toLowerCase())) {
+    return false;
+  }
+  throw new Error(`Invalid boolean value: ${value}`);
+}
+
+function parseInteger(
+  value: string | undefined,
+  fallback: number,
+  name: string,
+  minimum: number,
+  maximum = Number.MAX_SAFE_INTEGER,
+): number {
+  if (value === undefined || value === "") {
+    return fallback;
+  }
+  const normalized = value.trim();
+  const parsed = /^[+-]?\d+$/.test(normalized) ? Number(normalized) : Number.NaN;
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    const range = maximum === Number.MAX_SAFE_INTEGER
+      ? `greater than or equal to ${minimum}`
+      : `between ${minimum} and ${maximum}`;
+    throw new Error(`${name} must be an integer ${range}`);
+  }
+  return parsed;
+}
+
+function normalizeEndpoint(value: string | undefined): string {
+  const endpoint = value?.trim() || "/mcp";
+  if (!endpoint.startsWith("/")) {
+    throw new Error("MCP_ENDPOINT must start with '/'");
+  }
+  return endpoint.length > 1 ? endpoint.replace(/\/+$/, "") : endpoint;
+}
+
+function normalizeOAuthUrl(value: string | undefined, name: string): string {
+  if (!value) {
+    throw new Error(`${name} is required when MCP_OAUTH_ENABLED=true`);
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${name} must be an absolute URL`);
+  }
+  const isLoopback =
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "[::1]";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopback)) {
+    throw new Error(`${name} must use HTTPS (HTTP is allowed only for loopback tests)`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`${name} must not contain user credentials`);
+  }
+  if (url.search || url.hash) {
+    throw new Error(`${name} must not contain a query string or fragment`);
+  }
+  return url.href;
+}
+
+export function loadConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  processCwd = process.cwd(),
+): AppConfig {
+  const allowNoAuth = parseBoolean(env.MCP_ALLOW_NO_AUTH, false);
+  const authToken = env.MCP_AUTH_TOKEN?.trim() || undefined;
+  const oauthEnabled = parseBoolean(env.MCP_OAUTH_ENABLED, false);
+  const oauthApprovalKey = oauthEnabled
+    ? env.MCP_OAUTH_APPROVAL_KEY?.trim() || authToken
+    : undefined;
+  if (!allowNoAuth && !authToken && !oauthEnabled) {
+    throw new Error(
+      "MCP_AUTH_TOKEN is required. Set MCP_ALLOW_NO_AUTH=true only when an upstream OAuth gateway or private network authenticates callers.",
+    );
+  }
+  if (oauthEnabled && !oauthApprovalKey) {
+    throw new Error(
+      "MCP_OAUTH_APPROVAL_KEY (or MCP_AUTH_TOKEN for backward compatibility) is required when OAuth is enabled",
+    );
+  }
+
+  if (env.KRAKO_REACH_POLICY_FILE !== undefined &&
+      (!env.KRAKO_REACH_POLICY_FILE.trim() || !path.isAbsolute(env.KRAKO_REACH_POLICY_FILE.trim()))) {
+    throw new Error("KRAKO_REACH_POLICY_FILE must be an absolute path");
+  }
+  const defaultCwd = path.resolve(env.MCP_DEFAULT_CWD?.trim() || processCwd);
+  const reachNodeName = env.KRAKO_REACH_NODE_NAME?.trim() || os.hostname();
+  if (reachNodeName.length > 80) {
+    throw new Error("KRAKO_REACH_NODE_NAME must contain at most 80 characters");
+  }
+  const allowedHosts = env.MCP_ALLOWED_HOSTS?.split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+
+  const endpoint = normalizeEndpoint(env.MCP_ENDPOINT);
+  const publicUrl = env.MCP_PUBLIC_URL?.trim().replace(/\/+$/, "") || undefined;
+  const oauthIssuerUrl = oauthEnabled
+    ? normalizeOAuthUrl(env.MCP_OAUTH_ISSUER?.trim() || publicUrl, "MCP_OAUTH_ISSUER")
+    : undefined;
+  const oauthResourceUrl = oauthEnabled
+    ? normalizeOAuthUrl(
+        env.MCP_OAUTH_RESOURCE?.trim() || (publicUrl ? `${publicUrl}${endpoint}` : undefined),
+        "MCP_OAUTH_RESOURCE",
+      )
+    : undefined;
+
+  return {
+    host: env.MCP_HOST?.trim() || "127.0.0.1",
+    port: parseInteger(env.MCP_PORT, 3208, "MCP_PORT", 1, 65_535),
+    endpoint,
+    publicUrl,
+    allowedHosts: allowedHosts && allowedHosts.length > 0 ? allowedHosts : undefined,
+    trustProxyHops: parseInteger(
+      env.MCP_TRUST_PROXY_HOPS,
+      0,
+      "MCP_TRUST_PROXY_HOPS",
+      0,
+      16,
+    ),
+    authToken,
+    allowNoAuth,
+    oauthEnabled,
+    oauthApprovalKey,
+    oauthIssuerUrl,
+    oauthResourceUrl,
+    oauthStateFile: path.resolve(
+      env.MCP_OAUTH_STATE_FILE?.trim() ||
+        path.join(processCwd, ".kora-reach-oauth-state.json"),
+    ),
+    oauthAccessTokenTtlSeconds: parseInteger(
+      env.MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+      60 * 60,
+      "MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS",
+      300,
+    ),
+    oauthRefreshTokenTtlSeconds: parseInteger(
+      env.MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS,
+      30 * 24 * 60 * 60,
+      "MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS",
+      3600,
+    ),
+    oauthAuthorizationCodeTtlSeconds: parseInteger(
+      env.MCP_OAUTH_AUTHORIZATION_CODE_TTL_SECONDS,
+      5 * 60,
+      "MCP_OAUTH_AUTHORIZATION_CODE_TTL_SECONDS",
+      60,
+    ),
+    defaultCwd,
+    defaultShell:
+      env.MCP_DEFAULT_SHELL?.trim() || env.SHELL?.trim() || "/bin/bash",
+    maxRequestBody: env.MCP_MAX_REQUEST_BODY?.trim() || "8mb",
+    maxOutputBytes: parseInteger(
+      env.MCP_MAX_OUTPUT_BYTES,
+      1024 * 1024,
+      "MCP_MAX_OUTPUT_BYTES",
+      16 * 1024,
+    ),
+    maxRetainedProcessOutputBytes: parseInteger(
+      env.MCP_MAX_RETAINED_PROCESS_OUTPUT_BYTES,
+      4 * 1024 * 1024,
+      "MCP_MAX_RETAINED_PROCESS_OUTPUT_BYTES",
+      64 * 1024,
+    ),
+    processRetentionMs: parseInteger(
+      env.MCP_PROCESS_RETENTION_MS,
+      60 * 60 * 1000,
+      "MCP_PROCESS_RETENTION_MS",
+      1000,
+    ),
+    maxProcesses: parseInteger(
+      env.MCP_MAX_PROCESSES,
+      128,
+      "MCP_MAX_PROCESSES",
+      1,
+    ),
+    maxFileChunkBytes: parseInteger(
+      env.MCP_MAX_FILE_CHUNK_BYTES,
+      1024 * 1024,
+      "MCP_MAX_FILE_CHUNK_BYTES",
+      4096,
+    ),
+    maxEditFileBytes: parseInteger(
+      env.MCP_MAX_EDIT_FILE_BYTES,
+      64 * 1024 * 1024,
+      "MCP_MAX_EDIT_FILE_BYTES",
+      4096,
+    ),
+    reachConsoleEnabled: parseBoolean(env.KRAKO_REACH_CONSOLE_ENABLED, true),
+    reachConsolePath: env.KRAKO_REACH_CONSOLE_PATH?.trim() || "/console",
+    reachStateDirectory: path.resolve(
+      env.KRAKO_REACH_STATE_DIR?.trim() || path.join(processCwd, ".kora-reach"),
+    ),
+    reachNodeName,
+    reachPolicyFile: env.KRAKO_REACH_POLICY_FILE?.trim(),
+  };
+}

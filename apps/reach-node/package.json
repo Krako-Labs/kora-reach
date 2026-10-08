@@ -1,0 +1,36 @@
+{
+  "name": "kora-reach-node",
+  "version": "0.2.0",
+  "private": true,
+  "license": "MIT",
+  "description": "KORA Reach ChatGPT/Claude MCP server and remote computer execution node",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check:macos-ui": "node scripts/check-macos-ui-contract.mjs",
+    "check": "npm run typecheck && npm run build && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "express": "5.2.1",
+    "playwright-core": "1.55.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "24.13.3",
+    "esbuild": "^0.28.2",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}

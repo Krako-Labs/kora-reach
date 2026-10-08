@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>KRAKO Reach</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand"><span class="mark">K</span><span>KRAKO <strong>REACH</strong></span></div>
+      <div class="connection">
+        <span id="connection-dot"></span><span id="connection-label">Connecting</span>
+        <select id="node-select" aria-label="Active Reach node"></select>
+        <button id="connect-node-button" class="quiet">Connect node</button>
+        <button id="token-button" class="quiet">Access token</button>
+      </div>
+    </header>
+    <main>
+      <aside>
+        <div class="aside-title"><span>JOBS</span><button id="new-button" title="New job">＋</button></div>
+        <p id="job-keyboard-hint" class="job-keyboard-hint">↑ ↓ Home End to move · Enter or Space to select</p>
+        <div id="job-list" class="job-list"></div>
+      </aside>
+      <section class="workspace">
+        <form id="composer" class="composer">
+          <label>WORKING DIRECTORY<input id="cwd" placeholder="Uses the configured workspace" autocomplete="off" /></label>
+          <label>COMMAND<textarea id="command" rows="3" required placeholder="npm run build && npm test"></textarea></label>
+          <div class="composer-actions"><span id="node-mode-label">Runs on this Reach Node</span><button id="run-button" type="submit">Run job</button></div>
+        </form>
+        <div id="job-view" class="job-view empty">
+          <div class="empty-state"><div class="empty-icon">↗</div><h1>Your work, within reach.</h1><p>Run a task and inspect its logs and output files without moving them between machines.</p></div>
+        </div>
+      </section>
+      <aside class="artifacts-panel">
+        <div class="aside-title"><span>ARTIFACTS</span><span id="artifact-count" class="count">0</span></div>
+        <p id="artifact-keyboard-hint" class="artifact-keyboard-hint">↑ ↓ Home End to move · Enter or Space to preview</p>
+        <div id="artifact-list" class="artifact-list"><p class="muted">New and modified output files appear here.</p></div>
+        <section class="preview-shell">
+          <div id="preview-toolbar" class="preview-toolbar" hidden>
+            <div class="preview-title"><strong id="preview-name"></strong><span id="preview-meta"></span></div>
+            <span id="preview-live" class="live-badge" hidden>LIVE</span>
+            <div class="preview-actions">
+              <button id="previous-artifact" title="Previous artifact">‹</button>
+              <button id="next-artifact" title="Next artifact">›</button>
+              <button id="open-artifact">Open</button>
+              <button id="download-artifact">Download</button>
+            </div>
+          </div>
+          <div id="preview" class="preview" aria-label="Artifact preview" aria-busy="false"><p class="muted">Select an artifact to preview.</p></div>
+        </section>
+      </aside>
+    </main>
+    <dialog id="token-dialog">
+      <form id="token-form">
+        <h2>Open this Reach console</h2>
+        <p>Enter this node's bearer token. It stays in this browser tab.</p>
+        <input id="token" type="password" placeholder="MCP_AUTH_TOKEN" autocomplete="off" />
+        <div class="dialog-actions"><button type="button" class="quiet" onclick="this.closest('dialog').close()">Cancel</button><button id="save-token" type="submit">Connect</button></div>
+      </form>
+    </dialog>
+    <dialog id="node-dialog">
+      <form id="node-form">
+        <h2>Connect another Reach node</h2>
+        <p>The node descriptor is remembered locally. The token stays only in server memory and must be entered again after restart.</p>
+        <label>NODE URL<input id="node-url" type="url" placeholder="https://reach-node.example.com" required autocomplete="off" /></label>
+        <label>NODE TOKEN<input id="node-token" type="password" placeholder="Remote MCP_AUTH_TOKEN" autocomplete="off" /></label>
+        <p id="node-error" class="form-error" aria-live="polite"></p>
+        <div class="dialog-actions"><button type="button" class="quiet" onclick="this.closest('dialog').close()">Cancel</button><button id="save-node" type="submit">Connect node</button></div>
+      </form>
+    </dialog>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
