@@ -116,3 +116,22 @@ Official docs:
 - https://developers.openai.com/plugins/build/chatgpt-ui
 - https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
 - https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp
+
+## Optional P1 background Accessibility engine
+
+KORA Reach optionally integrates the separately installed MIT-licensed
+opensymph/open-computer-use engine for semantic app state and limited
+Accessibility-based actions. KORA does not redistribute its native runtime.
+Install this dependency yourself and configure KORA_OCU_BIN with the
+absolute path to its 'ocu' executable.
+
+MCP tools:
+- background_computer_status: inspect optional backend availability.
+- background_app_state: read app semantic accessibility state.
+- background_app_action: execute an allowlisted action, subject to execution policy.
+
+These are optional; the built-in macOS computer tools remain available.
+The semantic adapter is intended to reduce redundant screenshots and
+model vision decisions, but no measured token savings are claimed.
+Unattended native GUI operation and actual click/type behavior still
+require an interactive macOS permission/GUI E2E test.

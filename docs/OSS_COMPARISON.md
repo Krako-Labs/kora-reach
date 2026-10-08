@@ -25,3 +25,10 @@ Sources:
 - https://github.com/CopilotKit/OpenDots
 - https://github.com/CopilotKit/OpenBot
 - https://developers.openai.com/plugins/build/chatgpt-ui
+
+## P1 integration decision
+
+open-computer-use (@opensymph/open-computer-use, MIT, v1.2.0 inspected)
+provides a separate executable called 'ocu'. KORA wraps its documented
+'call' entrypoint through a narrowly allowlisted optional adapter. No
+third-party code or binaries are vendored into KORA Reach.

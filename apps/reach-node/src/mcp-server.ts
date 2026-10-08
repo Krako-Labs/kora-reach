@@ -15,6 +15,7 @@ import { registerBrowserTools } from "./browser-tools.js";
 import { registerComputerTools } from "./computer-tools.js";
 import { registerKoraTools } from "./kora-tools.js";
 import { registerLiveScreen } from "./live-screen-tools.js";
+import { registerBackgroundComputerTools } from "./background-computer-tools.js";
 
 export interface McpServices {
   processManager: ProcessManager;
@@ -71,5 +72,6 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
   registerBrowserTools(server, services.browser, policy, services.fileService.audit, config.reachNodeName);
   registerComputerTools(server, services.computer, policy, services.fileService.audit, config.reachNodeName);
   registerLiveScreen(server, services.computer, policy, services.fileService.audit);
+  registerBackgroundComputerTools(server, policy, services.fileService.audit);
   return server;
 }

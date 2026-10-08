@@ -46,7 +46,7 @@ const CONTROL_TOOLS = [
   "computer_status", "computer_type",
 ] as const;
 
-const ALL_TOOLS = [...CORE_TOOLS, ...CONTROL_TOOLS, "kora_local_task", "computer_live_view", "computer_live_frame"] as const;
+const ALL_TOOLS = [...CORE_TOOLS, ...CONTROL_TOOLS, "kora_local_task", "computer_live_view", "computer_live_frame", "background_computer_status", "background_app_state", "background_app_action"] as const;
 
 type ToolName = (typeof ALL_TOOLS)[number];
 type ToolResult = Awaited<ReturnType<Client["callTool"]>>;
