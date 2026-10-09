@@ -48,15 +48,14 @@ export class MacOSComputerAdapter implements ComputerPort {
   async #osa(script: string): Promise<string> { await this.#accessibility(); return run("/usr/bin/osascript", ["-e", script]); }
 
   async listApps() {
-    // AppleScript does not reliably coerce a tuple of three *lists* to text.
-    // Build one delimited row per process instead; omit malformed rows.
-    const raw = await this.#osa('tell application "System Events"\nset output to ""\nrepeat with p in (application processes whose background only is false)\ntry\nset output to output & (name of p as text) & tab & (unix id of p as text) & tab & (frontmost of p as text) & linefeed\nend try\nend repeat\nend tell\nreturn output');
-    return raw.split("\n").filter(Boolean).flatMap(line => {
-      const [name, pidText, activeText] = line.split("\t");
-      const pid = Number(pidText);
-      return name && Number.isInteger(pid) && pid > 0
-        ? [{ name, pid, active: activeText?.toLowerCase() === "true" }]
-        : [];
+    // macOS System Events can stall when evaluating properties for each app
+    // inside one AppleScript loop. Query bulk properties independently.
+    const names = (await this.#osa('tell application "System Events" to get name of every application process whose background only is false')).split(", ");
+    const ids = (await this.#osa('tell application "System Events" to get unix id of every application process whose background only is false')).split(", ");
+    const foreground = await this.#osa('tell application "System Events" to get name of first application process whose frontmost is true');
+    return names.flatMap((name, index) => {
+      const pid = Number(ids[index]);
+      return name && Number.isInteger(pid) && pid > 0 ? [{ name, pid, active: name === foreground }] : [];
     });
   }
 
