@@ -11,7 +11,7 @@ Open Terminal and run these commands:
     git switch feat/chatgpt-mcp-computer-control
     node scripts/setup-mac.mjs
 
-The installer creates a limited working folder under Documents/KORA-Workspace,
+The installer creates a limited working folder at ~/KORA-Workspace,
 installs pinned dependencies, builds the MCP Node, generates an owner-only
 authentication secret, configures a restricted workspace policy, and installs
 a user launchd service on localhost port 3208.
@@ -45,3 +45,5 @@ ChatGPT and Claude model usage remains subject to provider plan limits.
 
 Not yet included: single-click tunnel provisioning, public Plugin Directory
 branding, signed native Mac app, automatic provider OAuth enrollment.
+
+Note: Avoid defaulting background macOS launch agents to ~/Documents, Desktop or Downloads. Those privacy-protected folders may block command execution until macOS TCC approval; installer uses ~/KORA-Workspace.

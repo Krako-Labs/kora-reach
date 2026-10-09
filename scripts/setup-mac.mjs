@@ -19,7 +19,7 @@ function get(name, fallback) {
 }
 const dry = args.includes("--dry-run");
 const skipStart = args.includes("--no-start");
-const workspace = path.resolve(get("--workspace", path.join(os.homedir(), "Documents", "KORA-Workspace")));
+const workspace = path.resolve(get("--workspace", path.join(os.homedir(), "KORA-Workspace")));
 const state = path.resolve(get("--state-dir", path.join(os.homedir(), ".local/share/kora-reach")));
 const port = Number(get("--port", "3208"));
 const plistPath = path.join(os.homedir(), "Library/LaunchAgents/xyz.krako.kora-reach.plist");
@@ -69,7 +69,7 @@ async function main() {
   }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
   const launcher = path.join(state, "start.sh");
   const env = [
-    "#!/bin/sh", "set -eu",
+    "#!/bin/sh", "set -eu", "export PATH=/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
     "export MCP_AUTH_TOKEN=\"$(cat " + shellQuote(tokenFile) + ")\"",
     "export MCP_HOST=127.0.0.1",
     "export MCP_PORT=" + port,
