@@ -189,6 +189,13 @@ export async function startHttpServer(
   });
 
   const postHandler = async (request: Request, response: Response): Promise<void> => {
+    // ChatGPT sends the 2026-07-28 protocol header, newer than this SDK's
+    // current HTTP transport allowlist. Normalize only this known version to
+    // a supported transport version; the SDK still negotiates its actual
+    // supported protocol in initialize results. Do not relax other versions.
+    if (request.headers["mcp-protocol-version"] === "2026-07-28") {
+      request.headers["mcp-protocol-version"] = "2025-11-25";
+    }
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
