@@ -30,6 +30,7 @@ Recorded on 2026-11-05. Test pages, browser profiles, files, and native apps wer
 | Typecheck, build, native helper compilation | PASS | Latest candidate on Apple Silicon macOS. |
 | Reach automated suite | 173 passed | 30 test files; includes the existing regression suite. |
 | Root CLI suite | 5 passed | Includes zero escalation when tests already pass. |
+| Clean source installation | PASS | Downloaded the pushed branch, extracted a fresh source archive, ran `npm ci`, built native helpers, started the authenticated HTTP MCP server, and completed a real headless-browser download. |
 | Real browser download | PASS | Authenticated local fixture, headless Chrome, file content verification, repeated execution suppressed. |
 | Background continuation | PASS | Client disconnect and server restart, saved job execution, independent outcome check. |
 | Failed queue item | PASS | Malformed saved plan is isolated; a second valid job still completes. |
@@ -54,7 +55,7 @@ Recorded on 2026-11-05. Test pages, browser profiles, files, and native apps wer
 - The frame token includes image pixels, window ID, and process ID. A changed frame rejects coordinates. Dynamic content may require another screenshot.
 - Safari discovery and routing have not received an actual Safari end-to-end test.
 - macOS Accessibility, Screen Recording, and browser Automation permissions still apply. Reach cannot unlock the user's session or satisfy a login/permission prompt automatically.
-- Background recovery requires the Reach service to be running. Host reboot recovery, fresh packaging/install, release signing, and production ChatGPT exposure of the new tools are not certified by these tests.
+- Background recovery requires the Reach service to be running. Host reboot recovery, packaged-release installation, release signing, and production ChatGPT exposure of the new tools are not certified by these tests.
 - A code patch that needs an application rebuild or deployment may require additional work. A repair success does not itself certify the original task.
 - File evidence/download handling is bounded to 32MiB. A matched text string is weaker evidence than a full digest; choose the appropriate expected outcome.
 - These checks do not establish reliability on arbitrary websites or unrestricted whole-desktop workflows.
