@@ -102,9 +102,15 @@ evidence. Timeout cleanup remains bounded and targets only that child handle.
 distinguishes SIGINT's normal exit path from SIGTERM's session-ending path.
 
 Six focused regression tests passed with simulated child processes. Script syntax
-checks passed. **No Chrome process was launched to validate this change**, and the
-earlier 174-test result predates this QC-harness-only change. Its actual Chrome
-shutdown and absence of new crash dialogs still require a controlled retest.
+checks passed. The earlier 174-test result predates this QC-harness-only change.
+
+A controlled follow-up on MSM2-2 at 14:57–14:58 KST passed both a real headless
+download and the restart/unattended/stub-repair continuation. Both fixture browser
+processes exited with code0, no signal and no forced termination. Personal Chrome
+PID66585 remained unchanged. A subsequent check found no UserNotificationCenter
+dialog or remaining test process. The Mac was locked again; delayed-dialog
+behavior after unlocking and live focus/occlusion remain unverified. No real
+Codex was invoked in this repeat.
 
 <br />
 
