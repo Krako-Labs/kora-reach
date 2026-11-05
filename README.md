@@ -4,6 +4,24 @@
 
 Use the AI plan and computer you already pay for. KORA keeps routine work local and calls frontier AI only when intelligence is actually needed.
 
+**ChatGPT-first Mac control is the next product direction.** The v0.2 integration
+branch adds an authenticated MCP computer node, durable background jobs, browser
+and macOS tools, a Reach Console, and an experimental in-chat live-screen viewer.
+This is not yet the tagged stable release. See
+[ChatGPT-first MCP development and setup](docs/CHATGPT_FIRST_MCP.md).
+
+The v0.1 stable release below remains a standalone CLI.
+
+For the v0.2 preview, clone the feature branch and run the Phase A Mac setup:
+
+    git clone https://github.com/Krako-Labs/kora-reach.git
+    cd kora-reach
+    git switch feat/chatgpt-mcp-computer-control
+    node scripts/setup-mac.mjs
+
+The installer configures a local service and restricted workspace, but does not expose the Mac online. ChatGPT connection still requires secure HTTPS or Tunnel and explicit approval. See [Phase A installation](docs/PHASE_A_INSTALL.md) and [business models](docs/BUSINESS_MODELS.md).
+
+
     kora reach "Fix the failing tests in this repo"
 
 KORA Reach is a small, CLI-first local agent. It does not send every step to a model.

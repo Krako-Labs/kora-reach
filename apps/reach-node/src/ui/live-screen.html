@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {color-scheme: light dark;font-family: ui-sans-serif,system-ui,sans-serif}
+body {margin:0;padding:12px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h2{font-size:16px;margin:0}
+#status{font-size:12px;opacity:.78}
+button{border:1px solid currentColor;border-radius:8px;padding:7px 14px;background:transparent;cursor:pointer}
+button:focus-visible{outline:3px solid #3784ff;outline-offset:2px}
+#screen{width:100%;max-height:65vh;object-fit:contain;background:#101010;border-radius:10px;margin-top:12px;display:none}
+#empty{margin-top:12px;padding:35px 12px;border:1px dashed currentColor;border-radius:10px;text-align:center;opacity:.76}
+footer{font-size:12px;margin-top:8px;opacity:.7}
+</style>
+</head>
+<body>
+<header><div><h2>KORA Reach · Live Mac screen</h2><div id="status" role="status" aria-live="polite">Initializing...</div></div>
+<button id="toggle" disabled>Start viewing</button></header>
+<img id="screen" alt="Screen from your connected Mac">
+<div id="empty">Only your authenticated Mac is accessed.<p>Press Start viewing to begin.</p></div>
+<footer>Frames are fetched by this screen viewer without new model messages. Stop when you are done.</footer>
+<!-- KORA_BUNDLED_SCRIPT -->
+</body>
+</html>

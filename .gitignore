@@ -1,3 +1,10 @@
 node_modules/
 *.tgz
 .DS_Store
+
+# local MCP runtime (never commit credentials or computer state)
+apps/reach-node/.kora-reach/
+apps/reach-node/.kora-reach-oauth-state.json
+apps/reach-node/dist/
+apps/reach-node/.env
+apps/reach-node/.env.local

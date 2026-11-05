@@ -5,3 +5,7 @@ This project can optionally invoke the separately installed OpenAI Codex CLI.
 OpenAI Codex is not bundled with KORA Reach and is licensed separately by its authors.
 
 OpenAI, ChatGPT, and Codex are trademarks of OpenAI.
+
+The experimental apps/reach-node component contains modified source from the
+independent Krako Reach project, distributed with its MIT license at
+apps/reach-node/LICENSE. This code is maintained separately from production.
