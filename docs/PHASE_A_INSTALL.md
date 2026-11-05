@@ -2,13 +2,14 @@
 
 For macOS 13+ with Node.js 22+ and Git.
 
+The MCP preview is on `main`. The resumable control changes in [draft PR #3](https://github.com/Krako-Labs/kora-reach/pull/3) remain separate until their release checks pass.
+
 ## Get started
 
 Open Terminal and run these commands:
 
-    git clone https://github.com/Krako-Labs/kora-reach.git
+    git clone --branch main https://github.com/Krako-Labs/kora-reach.git
     cd kora-reach
-    git switch feat/chatgpt-mcp-computer-control
     node scripts/setup-mac.mjs
 
 The installer creates a limited working folder at ~/KORA-Workspace,

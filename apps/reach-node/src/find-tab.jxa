@@ -1,0 +1,32 @@
+// Select one matching existing tab. Never launch a browser or create a profile.
+function run(args) {
+  const [bundle, wanted, origin, mode, pid] = args;
+  if (!["com.google.Chrome", "com.apple.Safari"].includes(bundle)) return "unsupported";
+  const app = Application(pid ? Number(pid) : bundle);
+  if (!app.running()) return "not_running";
+  const windows = app.windows();
+  if (mode === "attest") {
+    const visible = windows.map(w => bundle === "com.apple.Safari" ? w.currentTab() : w.activeTab()).filter(t => (bundle === "com.apple.Safari" ? t.name() : t.title()) === wanted);
+    return visible.length === 1 && String(visible[0].url()).split("/").slice(0,3).join("/") === origin ? "attested" : "mismatch";
+  }
+  const matches = [];
+  for (const window of windows) {
+    const tabs = window.tabs();
+    for (let index = 0; index < tabs.length; index++) {
+      const tab = tabs[index];
+      const title = bundle === "com.apple.Safari" ? tab.name() : tab.title();
+      if (mode === "discover" && String(title).toLowerCase().includes(wanted.toLowerCase())) {
+        const site=String(tab.url()).match(/^https?:\/\/[^/@?#]+(?=\/|$)/);
+        if (site && (!origin || site[0] === origin) && matches.length < 40) matches.push({title:String(title).slice(0,256),origin:site[0]});
+        continue;
+      }
+      if (title === wanted && String(tab.url()).split("/").slice(0, 3).join("/") === origin) matches.push({window, index, tab});
+    }
+  }
+  if (mode === "discover") return JSON.stringify(matches);
+  if (matches.length !== 1) return matches.length ? "ambiguous_tab" : "tab_missing";
+  const {window, index, tab} = matches[0];
+  if (bundle === "com.apple.Safari") window.currentTab = tab;
+  else window.activeTabIndex = index + 1;
+  return "selected";
+}

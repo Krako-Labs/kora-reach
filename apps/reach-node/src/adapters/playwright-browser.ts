@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { access } from "node:fs/promises";
+import { FileEvidence } from "../file-evidence.js";
+import { randomUUID } from "node:crypto";
+import { access, open, link, rm } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -63,7 +65,14 @@ export class PlaywrightBrowserAdapter implements BrowserPort {
   #dialogWaiters = new Map<string, () => void>();
   #nextTab = 1;
 
-  constructor(profileDirectory = PROFILE) { this.profileDirectory = profileDirectory; }
+  constructor(profileDirectory = PROFILE, private readonly attachPort?: number) {
+    this.profileDirectory = profileDirectory;
+    if (attachPort !== undefined && (!Number.isInteger(attachPort) || attachPort < 1 || attachPort > 65535)) {
+      throw new Error("Expected an explicit local Chrome debugging port");
+    }
+  }
+
+  managedPid(): number | undefined { return this.#child?.pid; }
 
   async start(): Promise<BrowserStatus> {
     if (this.#browser?.isConnected()) return this.status();
@@ -118,8 +127,22 @@ export class PlaywrightBrowserAdapter implements BrowserPort {
     return id;
   }
 
+  async #attachExisting(): Promise<BrowserStatus> {
+    const browser = await chromium.connectOverCDP("http://127.0.0.1:" + this.attachPort, { timeout: 1200 });
+    this.#browser = browser;
+    browser.on("disconnected", () => { if (this.#browser === browser) void this.#disconnect(); });
+    this.#rebuildTabs();
+    return this.status();
+  }
+
   async #ensureConnected(): Promise<Browser> {
     if (this.#browser?.isConnected()) return this.#browser;
+    if (this.attachPort !== undefined) {
+      this.#starting ??= this.#attachExisting().finally(() => { this.#starting = undefined; });
+      await this.#starting;
+      if (!this.#browser) throw new ControlError("CDP_UNAVAILABLE", "Existing Chrome attachment failed");
+      return this.#browser;
+    }
     if (this.#child && this.#port) {
       try {
         this.#browser = await chromium.connectOverCDP(`http://127.0.0.1:${this.#port}`, { timeout: 1500 });
@@ -152,7 +175,11 @@ export class PlaywrightBrowserAdapter implements BrowserPort {
     return this.status();
   }
 
-  async close(): Promise<void> { await this.stop(false); }
+  async close(): Promise<void> {
+    // For connectOverCDP, Playwright closes the client transport on this call.
+    if (this.attachPort) await this.#browser?.close();
+    await this.stop(false);
+  }
 
   async listTabs(): Promise<BrowserTab[]> {
     const connected = await this.#ensureConnected();
@@ -187,17 +214,42 @@ export class PlaywrightBrowserAdapter implements BrowserPort {
     return { tabId, generation, origin: sanitizeOrigin(page.url()), elements, truncated: result.count > result.items.length };
   }
 
-  async #resolve(tabId: string, ref: string, expectedOrigin?: string) {
+  async #resolve(tabId: string, ref: string, expectedOrigin?: string, guard?: {title:string;name:string}) {
     const page = await this.#page(tabId);
     if (expectedOrigin && sanitizeOrigin(page.url()) !== sanitizeOrigin(expectedOrigin)) throw new ControlError("UNEXPECTED_ORIGIN", `Expected ${sanitizeOrigin(expectedOrigin)}, found ${sanitizeOrigin(page.url())}`);
     const state = this.#refs.get(tabId); if (!state) throw new ControlError("STALE_ELEMENT", "Take a new snapshot before using an element reference");
     const token = await page.evaluate(String.raw`(() => String(document.documentElement.dataset.krakoDocumentToken || ""))()`) as string;
     if (token !== state.documentToken) throw new ControlError("STALE_ELEMENT", "The document changed after this reference was created");
     const recipe = state.selectors.get(ref); if (!recipe) throw new ControlError("ELEMENT_NOT_FOUND", `Unknown element reference: ${ref}`);
+    if (guard && (recipe.name !== guard.name || await page.title() !== guard.title)) throw new ControlError("STALE_ELEMENT","The window or named element changed");
     let locator = recipe.name && recipe.name !== "[REDACTED]" ? page.getByRole(recipe.role as AriaRole, { name: recipe.name, exact: true }) : page.locator(recipe.selector);
-    if (await locator.count() !== 1) locator = page.locator(recipe.selector);
+    if (!guard && await locator.count() !== 1) locator = page.locator(recipe.selector);
     if (await locator.count() !== 1) throw new ControlError("STALE_ELEMENT", "The referenced element no longer resolves uniquely");
     return { page, locator };
+  }
+
+  async captureDownload(tabId: string, ref: string, origin: string, destination: string, sha256?: string, containsText?:string, guard?: {title:string;name:string}) {
+    const page = await this.#page(tabId);
+    const [download] = await Promise.all([
+      page.waitForEvent("download", { timeout: 12000 }),
+      this.act(tabId,ref,"click",undefined,origin,guard),
+    ]);
+    const source = await download.createReadStream();
+    if (!source) throw new Error("Download stream unavailable");
+    const temporary = path.join(path.dirname(destination), ".reach-" + randomUUID());
+    const fd = await open(temporary,"wx",0o600);
+    try {
+      const evidence = new FileEvidence(sha256, containsText);
+      for await (const chunk of source) {
+        evidence.update(chunk);
+        await fd.writeFile(chunk);
+      }
+      if (!evidence.matches()) throw new Error("Download did not match expected contents");
+      await fd.sync();
+      await link(temporary,destination);
+    } finally {
+      source.destroy(); await fd.close(); await rm(temporary,{force:true}); await download.delete().catch(()=>{});
+    }
   }
 
   async screenshot(tabId: string) { const page = await this.#page(tabId); return { data: (await page.screenshot({ type: "png" })).toString("base64"), mimeType: "image/png" as const }; }
@@ -208,8 +260,8 @@ export class PlaywrightBrowserAdapter implements BrowserPort {
     return this.getTab(tabId);
   }
 
-  async act(tabId: string, ref: string, action: "click" | "fill" | "press" | "select" | "get_text" | "get_attribute", value?: string, expectedOrigin?: string): Promise<Record<string, unknown>> {
-    const { locator } = await this.#resolve(tabId, ref, expectedOrigin);
+  async act(tabId: string, ref: string, action: "click" | "fill" | "press" | "select" | "get_text" | "get_attribute", value?: string, expectedOrigin?: string, guard?: {title:string;name:string}): Promise<Record<string, unknown>> {
+    const { locator } = await this.#resolve(tabId, ref, expectedOrigin, guard);
     if (!(await locator.isVisible())) throw new ControlError("ELEMENT_NOT_VISIBLE", "Referenced element is not visible");
     if (["click", "fill", "press", "select"].includes(action) && !(await locator.isEnabled())) throw new ControlError("ELEMENT_DISABLED", "Referenced element is disabled");
     try {

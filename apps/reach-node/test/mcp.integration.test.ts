@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { gzipSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -84,6 +85,37 @@ describe("remote development MCP server", () => {
       body: "{",
     });
     expect(authenticated.status).toBe(400);
+  });
+
+  it("rejects damaged compressed requests and still serves authenticated MCP", async () => {
+    const headers = {
+      authorization: "Bearer integration-secret",
+      "content-type": "application/json",
+      "content-encoding": "gzip",
+      accept: "application/json, text/event-stream",
+    };
+    const payload = gzipSync(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "compressed-request-qc", version: "1" },
+      },
+    }));
+    // Invalid bytes after a compressed member must be handled as a bad request.
+    // Earlier body-parser releases could emit an unhandled decompressor error.
+    const damaged = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: Buffer.concat([payload, Buffer.from([0x1f, 0x8b, 0x00, 0xff])]),
+    });
+    expect(damaged.status).toBe(400);
+    await damaged.text();
+    const valid = await fetch(endpoint, { method: "POST", headers, body: payload });
+    expect(valid.status).toBe(200);
+    expect(await valid.json()).toMatchObject({ jsonrpc: "2.0", id: 7, result: {} });
   });
 
   it("lists tools and executes script and file workflows", async () => {

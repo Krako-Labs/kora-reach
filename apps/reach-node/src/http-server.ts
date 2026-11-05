@@ -1,3 +1,4 @@
+import { registerControlWorkflow } from "./control-workflow.js";
 import { randomUUID } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
 
@@ -147,9 +148,10 @@ export async function startHttpServer(
   const authenticate = createBearerAuth(config, oauthProvider);
   const parseMcpJson = express.json({ limit: config.maxRequestBody });
 
-  const reachJobs = config.reachConsoleEnabled
+  const reachJobs = (config.reachConsoleEnabled || process.env.KORA_CONTROL_REPAIR_WORKSPACE)
     ? await ReachJobManager.open(config, services.processManager, services.fileService)
     : undefined;
+  services.repairJobs = reachJobs;
   const reachNodes = config.reachConsoleEnabled
     ? await ReachNodeRegistry.open(config).catch(async error => { await reachJobs?.close(); throw error; })
     : undefined;
@@ -317,8 +319,17 @@ export async function startHttpServer(
     });
   });
 
+  const resume = registerControlWorkflow(undefined, config, services);
+  let pendingResume: Promise<void> | undefined;
+  const resumeInterval = setInterval(() => {
+    pendingResume ??= resume()
+      .catch(() => console.error("Control repair reconciliation failed"))
+      .finally(() => { pendingResume = undefined; });
+  }, 2000).unref();
   const authCheckInterval = oauthProvider ? setInterval(checkAuth, 30_000).unref() : undefined;
   const close = async (): Promise<void> => {
+    clearInterval(resumeInterval);
+    await pendingResume;
     clearInterval(authCheckInterval);
     clearInterval(cleanupInterval);
     const requests = [...activeRequests];
@@ -327,6 +338,7 @@ export async function startHttpServer(
     await Promise.allSettled(requests.map((request) => request.server.close()));
     await reachJobs?.close();
     await services.browser.close();
+    await services.existingChrome?.close();
     await services.processManager.shutdown();
     await new Promise<void>((resolve, reject) => {
       httpServer.close((error) => {

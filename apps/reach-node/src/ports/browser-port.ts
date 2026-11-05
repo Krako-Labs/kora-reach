@@ -4,6 +4,7 @@ export interface BrowserSnapshot { tabId: string; generation: number; origin: st
 export interface BrowserStatus { running: boolean; connected: boolean; managed: boolean; profileDirectory?: string; tabs: number; }
 
 export interface BrowserPort {
+  managedPid?(): number | undefined;
   start(): Promise<BrowserStatus>;
   status(): Promise<BrowserStatus>;
   stop(terminateManagedBrowser: boolean): Promise<BrowserStatus>;
@@ -11,9 +12,10 @@ export interface BrowserPort {
   listTabs(): Promise<BrowserTab[]>;
   getTab(tabId: string): Promise<BrowserTab>;
   snapshot(tabId: string, maxElements: number): Promise<BrowserSnapshot>;
+  captureDownload?(tabId: string, ref: string, origin: string, destination: string, sha256?: string, containsText?:string, guard?: {title:string;name:string}): Promise<void>;
   screenshot(tabId: string): Promise<{ data: string; mimeType: "image/png" }>;
   navigate(tabId: string, url: string, expectedOrigin?: string): Promise<BrowserTab>;
-  act(tabId: string, ref: string, action: "click" | "fill" | "press" | "select" | "get_text" | "get_attribute", value?: string, expectedOrigin?: string): Promise<Record<string, unknown>>;
+  act(tabId: string, ref: string, action: "click" | "fill" | "press" | "select" | "get_text" | "get_attribute", value?: string, expectedOrigin?: string, guard?: {title:string;name:string}): Promise<Record<string, unknown>>;
   waitFor(tabId: string, options: { ref?: string; text?: string; state?: "visible" | "hidden"; timeoutMs: number }): Promise<Record<string, unknown>>;
   history(tabId: string, action: "back" | "forward" | "reload"): Promise<BrowserTab>;
   dialog(tabId: string, action: "accept" | "dismiss", promptText?: string): Promise<Record<string, unknown>>;
