@@ -28,7 +28,7 @@ Recorded on 2026-11-05. Test pages, browser profiles, files, and native apps wer
 | Check | Result | Scope |
 | --- | --- | --- |
 | Typecheck, build, native helper compilation | PASS | Latest candidate on Apple Silicon macOS. |
-| Reach automated suite | 174 passed | 30 test files; includes the existing regression suite. |
+| Reach automated suite | 187 passed | 32 test files; includes shutdown and locked-session continuation regressions. |
 | Root CLI suite | 5 passed | Includes zero escalation when tests already pass. |
 | Dependency audit | PASS | Full and production-only audits both report zero known vulnerabilities after the updates below. |
 | Damaged compressed HTTP request | PASS | Returns HTTP 400; a subsequent valid compressed, authenticated MCP initialization returns HTTP 200. |
@@ -114,6 +114,62 @@ Codex was invoked in this repeat.
 
 <br />
 
+## Locked-session handling — November 5, 2026
+
+Visible QC now checks the macOS console before creating fixtures. A locked or
+unavailable console stops that test with an unlock message. Headless QC does not
+require an unlocked desktop.
+
+Admitted visible QC holds task-scoped `caffeinate -d -i -w <pid>` assertions.
+An outer cleanup releases them even if setup or testing throws; the process-bound
+assertions also end when the QC process exits. This suppresses idle display and
+system sleep only. It does not unlock the session or prevent manual/security
+policy locks. Authentication and power settings are unchanged.
+
+On MSM2-2 at 16:02 KST, the actual locked-console preflight rejected GUI QC.
+A short isolated probe verified both sleep assertions and their removal on
+cleanup. A real headless download still passed while locked, including file
+contents, repeat suppression and clean Chrome exit (code0, no signal).
+Live GUI execution after unlocking remains unverified. These changes are in
+the QC harness, not a deployed production auto-unlock feature.
+
+<br />
+
+## Automatic continuation after a locked session
+
+Previously, a background native step was removed from the queue when it encountered
+a locked console. It now retains the immutable plan and checks again at most once
+per minute, for up to 24 hours after the first block. The wait survives a server
+restart. On expiry, the job reports `session_wait_expired` and preserves its plan
+for inspection. Foreground-only jobs are not silently added to the queue.
+
+Only a confirmed pre-dispatch `session_locked` result receives this retry.
+An uncertain click remains reserved. Every resumed attempt rechecks target,
+policy and outcome. Independent jobs continue. A directly observed missing DOM
+control remains eligible for the separately authorized headless coding-repair
+path even when native fallback cannot access the desktop.
+
+The MCP guidance now tells the calling assistant to perform authorized routine
+diagnostics, safe recovery and verification before asking the user to act.
+It does not grant new permissions or bypass authentication.
+
+Final validation on November 5:
+- Typecheck, build and all 187 tests across 32 files passed on macOS.
+- Seven new simulated-native regressions cover persistent wait, throttling,
+  expiry, uncertain input, foreground-only scope, lock during dispatch,
+  independent jobs, post-repair wait and headless DOM defect handling.
+- Actual locked MSM2-2: a native job remained queued across an HTTP server
+  restart while an independent real Chrome download completed and verified.
+- The restart/stub-repair scenario also completed its original browser task.
+  Both final fixture browsers exited with code0, no signal and no forced exit.
+- No fixture processes remained; the existing personal Chrome was unchanged.
+
+Unlock-to-dispatch is covered by simulated-native tests, not a live unlock
+transition. Live GUI/focus/occlusion remains pending. This is a draft candidate;
+the production Reach service has not been updated.
+
+<br />
+
 ## Remaining limits
 
 - Pointer events require `KORA_CONTROL_VISUAL_EVENTS=1`. Keep this unset until dedicated live QC passes. Named CDP and Accessibility actions do not require it.
@@ -137,6 +193,8 @@ From `apps/reach-node`:
 npm ci
 npm run check
 node scripts/qc-control-mac.mjs --headless
+# On a locked dedicated test Mac, also verify persistent waiting:
+node scripts/qc-control-mac.mjs --headless --locked-wait
 node scripts/qc-control-mac.mjs --repair --repair-stub --restart --unattended
 ```
 

@@ -293,6 +293,7 @@ export function registerControlWorkflow(
       evidence,
       last,
       repair: await repairState(id),
+      sessionWait: await sessionWait(id),
       status: evidence ? "verified" : dispatched ? "outcome_unverified" : last.status,
     };
   }
@@ -302,7 +303,7 @@ export function registerControlWorkflow(
     {
       annotations: writes,
       description:
-        "Start a resumable UI step on this Mac. Use existing for personal Chrome/Safari or a native app and managed only for Reach Chrome. Supply exact window/tab title and the expected outcome. Reuse jobId after a lost response.",
+        "Start a resumable UI step on this Mac. Use existing for personal Chrome/Safari or a native app and managed only for Reach Chrome. Supply exact window/tab title and the expected outcome. Reuse jobId after a lost response. startInBackground also waits up to 24 hours for a locked console, checking at most once per minute without bypassing authentication.",
       inputSchema: { ...schemaId, plan },
     },
     ({ jobId, plan: p }) =>
@@ -623,6 +624,27 @@ export function registerControlWorkflow(
       }
     }
   }
+  const waitSchema = z.object({
+    firstBlockedAt: z.number().finite().nonnegative(),
+    nextAttemptAt: z.number().finite().nonnegative(),
+  });
+  async function sessionWait(id: string) {
+    try {
+      return waitSchema.parse(JSON.parse(await readFile(path.join(dir(id), "session-wait.json"), "utf8")));
+    } catch (e) {
+      if (codeIs(e, "ENOENT")) return undefined;
+      throw e;
+    }
+  }
+  async function retainLockedStep(id: string, result: Record<string, unknown>) {
+    if (result.status !== "session_locked") return false;
+    const now = Date.now();
+    const firstBlockedAt = (await sessionWait(id))?.firstBlockedAt ?? now;
+    await atomicJson(path.join(dir(id), "session-wait.json"), {
+      firstBlockedAt, nextAttemptAt: now + 60_000,
+    });
+    return true;
+  }
   return async function resumeCompletedRepairs() {
     let ids: string[];
     try {
@@ -634,26 +656,39 @@ export function registerControlWorkflow(
     for (const id of ids) {
       if (!z.uuid().safeParse(id).success) continue;
       try {
+        const waiting = await sessionWait(id);
+        if (waiting && Date.now() - waiting.firstBlockedAt >= 24 * 60 * 60_000) {
+          await atomicJson(path.join(dir(id), "last.json"), { status: "session_wait_expired" });
+          await rm(path.join(queue, id), { force: true });
+          await rm(path.join(dir(id), "session-wait.json"), { force: true });
+          continue;
+        }
+        if (waiting && Date.now() < waiting.nextAttemptAt) continue;
         const repair = await repairState(id);
         if (!repair.id && !repair.status) {
           if ((await load(id)).startInBackground) {
-            await files.audit.run("mcp", "control_background_step", () => runStep(id));
+            const result = await files.audit.run("mcp", "control_background_step", () => runStep(id));
+            if (await retainLockedStep(id, result)) continue;
             if ((await repairState(id)).status) continue;
           }
           await rm(path.join(queue, id), { force: true });
+          await rm(path.join(dir(id), "session-wait.json"), { force: true });
           continue;
         }
         if (!repair.id || repair.status === "running") continue;
         if (repair.status === "succeeded") {
           // Recheck the original UI goal. The durable effect claim prevents duplicate dispatch.
-          await files.audit.run("mcp", "control_resume_repaired", () => runStep(id));
+          const result = await files.audit.run("mcp", "control_resume_repaired", () => runStep(id));
+          if (await retainLockedStep(id, result)) continue;
         }
         await rm(path.join(queue, id), { force: true });
+        await rm(path.join(dir(id), "session-wait.json"), { force: true });
       } catch {
         // Keep the original plan/evidence for inspection, but do not let a poison
         // item monopolize the background loop or repeatedly log sensitive errors.
         await atomicJson(path.join(dir(id), "last.json"), {status:"background_reconciliation_failed"}).catch(()=>{});
         await rm(path.join(queue,id), {force:true});
+        await rm(path.join(dir(id), "session-wait.json"), { force: true });
         console.error("Control job reconciliation failed:", id);
       }
     }

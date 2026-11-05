@@ -59,7 +59,7 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
     },
     {
       instructions:
-         "KORA Reach connects ChatGPT and other MCP hosts to the user's own Mac. Prefer kora_local_task for known deterministic tests/files/verification without extra model inference. Use authenticated exec_command, filesystem, browser, computer, and process tools for tasks that genuinely require reasoning. For existing browser tabs and Mac windows use control_begin, control_run and control_status. If semantic controls are unavailable use control_frame before reporting failure. Never treat local action counts as model token savings; respect local access policy and approvals.",
+         "KORA Reach connects ChatGPT and other MCP hosts to the user's own Mac. Prefer kora_local_task for known deterministic tests/files/verification without extra model inference. Use authenticated exec_command, filesystem, browser, computer, and process tools for tasks that genuinely require reasoning. For existing browser tabs and Mac windows use control_begin, control_run and control_status. Complete authorized routine diagnostics, safe recovery and verification directly with available tools before asking the user to act. Continue independent work when one path is blocked. For authorized background UI work set startInBackground; a locked session is retained for bounded automatic resumption after unlock. Never bypass authentication or replay an uncertain action. If semantic controls are unavailable and the session permits capture, use control_frame before reporting failure. Never treat local action counts as model token savings; respect local access policy and approvals.",
       capabilities: { logging: {} },
     },
   );

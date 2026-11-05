@@ -9,6 +9,7 @@ import { once } from "node:events";
 import path from "node:path";
 import os from "node:os";
 import { stopChromeFixture } from "./qc-chrome-shutdown.mjs";
+import { assertUnlockedConsole, keepQcAwake } from "./qc-mac-session.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { loadConfig } from "../dist/src/config.js";
@@ -23,6 +24,14 @@ if (!headlessRepair && (!process.argv.includes("--allow-visible-ui") ||
   throw new Error("Visible UI QC disabled. Use a dedicated idle Mac and explicitly set KORA_UI_QC_HOST to its hostname with --allow-visible-ui. Never run on a live demo or user desktop.");
 }
 
+if (!headlessRepair) assertUnlockedConsole();
+const lockedWait = process.argv.includes("--locked-wait");
+if (lockedWait) {
+  assert.ok(headlessRepair, "--locked-wait requires headless QC");
+  assert.throws(assertUnlockedConsole, /unlock the macOS console first/);
+}
+const releaseAwake = headlessRepair ? async () => {} : await keepQcAwake();
+try {
 const scratch = await mkdtemp(path.join(os.tmpdir(), "reach-control-qc-"));
 const title = "Reach QC " + randomUUID();
 const sheet = process.argv.includes("--sheet");
@@ -130,7 +139,35 @@ const call = async (name, args) => {
 let chrome;
 let occluder;
 let passed = false;
+let lockedJobId;
+let lockedDestination;
 try {
+  if (lockedWait) {
+    lockedJobId = randomUUID();
+    lockedDestination = path.join(scratch, "locked-must-not-write.txt");
+    await call("control_begin", {
+      jobId: lockedJobId,
+      plan: {
+        startInBackground: true,
+        target: { session: "existing", bundle: "xyz.krako.reach.qcfixture", title: "Absent locked fixture " + randomUUID() },
+        button: "Export",
+        verify: { kind: "file", path: lockedDestination, containsText: "never dispatched" },
+      },
+    });
+    let waiting;
+    for (let i = 0; i < 25; i++) {
+      waiting = await call("control_status", { jobId: lockedJobId });
+      if (waiting.sessionWait) break;
+      await new Promise(r => setTimeout(r, 200));
+    }
+    assert.equal(waiting.status, "session_locked");
+    assert.ok(waiting.sessionWait.nextAttemptAt > waiting.sessionWait.firstBlockedAt);
+    await client.close();
+    await host.close();
+    ({ host, client } = await connect());
+    assert.deepEqual((await call("control_status", { jobId: lockedJobId })).sessionWait, waiting.sessionWait);
+    console.log("Actual locked queue retained across server restart: PASS");
+  }
   await mkdir(path.join(profile, "Default"), { recursive: true });
   await writeFile(
     path.join(profile, "Default", "Preferences"),
@@ -224,6 +261,7 @@ try {
     }
     for (let i = 0; i < 300; i++) {
       const result = await call("control_status", { jobId });
+      assert.notEqual(result.status, "session_locked", "Headless code repair must not wait for the desktop");
       if (result.repair.id && result.repair.status !== "running") {
         assert.equal(result.repair.status, "succeeded");
         break;
@@ -289,6 +327,12 @@ try {
   console.log(
     (nativeApp ? "Native AppKit" : "Existing Chrome") + " / contents verified / repeat suppressed: PASS",
   );
+  if (lockedWait) {
+    assert.equal((await call("control_status", { jobId: lockedJobId })).status, "session_locked");
+    await readFile(path.join(scratch, "state", "control-repair-queue", lockedJobId));
+    await assert.rejects(readFile(lockedDestination), { code: "ENOENT" });
+    console.log("Independent real browser task completed while native job waits: PASS");
+  }
   passed = true;
 } finally {
   let cleanupFailure;
@@ -310,4 +354,8 @@ try {
   if (passed && !cleanupFailure) await rm(scratch, { force: true, recursive: true });
   else console.error("QC evidence retained locally:", scratch);
   if (cleanupFailure) throw cleanupFailure;
+}
+
+} finally {
+  await releaseAwake();
 }
