@@ -130,8 +130,8 @@ On MSM2-2 at 16:02 KST, the actual locked-console preflight rejected GUI QC.
 A short isolated probe verified both sleep assertions and their removal on
 cleanup. A real headless download still passed while locked, including file
 contents, repeat suppression and clean Chrome exit (code0, no signal).
-Live GUI execution after unlocking remains unverified. These changes are in
-the QC harness, not a deployed production auto-unlock feature.
+Live GUI execution after unlocking remains unverified. These sleep-prevention changes are in
+the QC harness; they do not provide automatic login unlocking.
 
 <br />
 
@@ -165,8 +165,55 @@ Final validation on November 5:
 - No fixture processes remained; the existing personal Chrome was unchanged.
 
 Unlock-to-dispatch is covered by simulated-native tests, not a live unlock
-transition. Live GUI/focus/occlusion remains pending. This is a draft candidate;
-the production Reach service has not been updated.
+transition. Live GUI/focus/occlusion remains pending. This was pre-rollout validation; see the later limited live rollout below.
+
+<br />
+
+## Packaged candidate and limited live rollout
+
+The Apple Silicon Node package was built from commit `9dc24a05a333`. The archive
+includes compiled runtime, native helpers, the local CLI and pinned dependency
+manifests; it excludes local credentials, runtime state and installed dependencies.
+The new `scripts/package-node.mjs` records source identity in `BUILD.json`
+and emits a SHA-256 checksum. A candidate package is not a signed/notarized Mac app.
+
+A fresh extraction on MSM2-2 passed checksum validation and production-only
+dependency installation with zero known advisories. Against that packaged runtime:
+- Unauthenticated MCP requests returned 401; authenticated tool listing contained
+  all six control tools.
+- A restricted file boundary rejected an outside-workspace fixture.
+- The local CLI ran a real passing test with no model escalation.
+- Saved control evidence and repeat suppression passed.
+- Actual locked-queue persistence, independent Chrome download, server restart
+  and stub-repair continuation passed. Both browser fixtures exited cleanly.
+
+MSM2-2 alone now runs this **limited preview**. Activation checked for active
+managed processes, browsers, durable jobs and MCP requests before switching its
+launcher. Existing authentication, OAuth state and workspace policy were retained.
+An automatic rollback path was prepared. The healthy activation path passed;
+rollback was not deliberately triggered on the live service.
+
+After activation, HTTP/OAuth readiness passed. An actual ChatGPT connector command
+succeeded, and an authenticated client verified the live local CLI and saved
+control outcome. Experimental production pointer events remain disabled.
+Other Macs were not updated. The public PR remains draft.
+
+The six tools are present on the live MCP server. They are **not yet present in
+this conversation's cached direct tool list**; do not claim refreshed ChatGPT
+tool-menu exposure.
+
+### Deferred native GUI QC
+
+A bounded local worker on MSM2-2 is waiting for an unlocked console and at least
+60 seconds without input. It then runs the isolated native Save-sheet,
+visual occlusion/focus and Chrome Accessibility scenarios. It checks readiness
+before each scenario, records local status and logs, and expires after 24 hours
+of waiting. It does not change login security or publish results automatically.
+A short locked-host probe confirmed expiry without launching a test fixture.
+
+The worker is `apps/reach-node/scripts/qc-when-unlocked.mjs`; it requires the
+same explicit host-bound visible-QC opt-in. Its waiting state is not a GUI PASS.
+The experimental visual setting is confined to its disposable QC process.
 
 <br />
 
@@ -178,7 +225,7 @@ the production Reach service has not been updated.
 - The frame token includes image pixels, window ID, and process ID. A changed frame rejects coordinates. Dynamic content may require another screenshot.
 - Safari discovery and routing have not received an actual Safari end-to-end test.
 - macOS Accessibility, Screen Recording, and browser Automation permissions still apply. Reach cannot unlock the user's session or satisfy a login/permission prompt automatically.
-- Background recovery requires the Reach service to be running. Host reboot recovery, packaged-release installation, release signing, and production ChatGPT exposure of the new tools are not certified by these tests.
+- Background recovery requires the Reach service to be running. Host reboot recovery, release signing and refreshed direct ChatGPT tool-menu exposure are not certified. Packaged Node installation and a limited live rollout are verified above.
 - A code patch that needs an application rebuild or deployment may require additional work. A repair success does not itself certify the original task.
 - File evidence/download handling is bounded to 32MiB. A matched text string is weaker evidence than a full digest; choose the appropriate expected outcome.
 - These checks do not establish reliability on arbitrary websites or unrestricted whole-desktop workflows.
@@ -202,4 +249,4 @@ The last command tests continuation with a stub repair executable. To test the r
 
 Visible tests must use a dedicated idle Mac. Never use an active user's desktop or an exhibition/demo computer. They require both a matching `KORA_UI_QC_HOST` environment value and `--allow-visible-ui`. Available scenarios include `--native-only`, `--cdp-down`, `--app`, `--sheet`, and `--visual`. The visual scenario explicitly enables experimental pointer events for its disposable test only.
 
-No production Reach service was restarted or updated for this feature. Do not treat this report as deployment approval or as a successful live-window release gate.
+MSM2-2 now runs the limited Node preview described above. This does not establish a successful live-window release gate or authorize rollout to other hosts.
