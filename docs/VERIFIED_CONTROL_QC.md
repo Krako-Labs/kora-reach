@@ -28,9 +28,11 @@ Recorded on 2026-11-05. Test pages, browser profiles, files, and native apps wer
 | Check | Result | Scope |
 | --- | --- | --- |
 | Typecheck, build, native helper compilation | PASS | Latest candidate on Apple Silicon macOS. |
-| Reach automated suite | 173 passed | 30 test files; includes the existing regression suite. |
+| Reach automated suite | 174 passed | 30 test files; includes the existing regression suite. |
 | Root CLI suite | 5 passed | Includes zero escalation when tests already pass. |
-| Clean source installation | PASS | Downloaded the pushed branch, extracted a fresh source archive, ran `npm ci`, built native helpers, started the authenticated HTTP MCP server, and completed a real headless-browser download. |
+| Dependency audit | PASS | Full and production-only audits both report zero known vulnerabilities after the updates below. |
+| Damaged compressed HTTP request | PASS | Returns HTTP 400; a subsequent valid compressed, authenticated MCP initialization returns HTTP 200. |
+| Clean source installation | PASS | A fresh source archive passed `npm ci`, native-helper build, authenticated HTTP MCP startup, and a real headless-browser download. The resumed run used the same runtime/dependency/test file hashes as the canonical worktree. |
 | Real browser download | PASS | Authenticated local fixture, headless Chrome, file content verification, repeated execution suppressed. |
 | Background continuation | PASS | Client disconnect and server restart, saved job execution, independent outcome check. |
 | Failed queue item | PASS | Malformed saved plan is isolated; a second valid job still completes. |
@@ -44,6 +46,35 @@ Recorded on 2026-11-05. Test pages, browser profiles, files, and native apps wer
 | Locked session | PASS | Native helper refused dispatch with `session_locked`. |
 | Visible-test admission | PASS | No host-specific opt-in: script stops before creating test windows. |
 | Visual coordinates and focus recovery | NOT CERTIFIED | Earlier isolated success did not remain reliable during window occlusion. Latest process-targeted dispatch requires a dedicated unlocked-host retest. |
+
+<br />
+
+## Dependency and non-GUI revalidation — 2026-11-05
+
+The resumed candidate updates Zod from 4.4.3 to 4.6.7 and Vitest from 4.1.11 to 4.1.12.
+Compatible transitive updates include body-parser 2.4.0, fast-uri 3.1.9,
+@hono/node-server 2.1.6, Hono 4.13.16, ip-address 10.7.6, qs 6.17.1 and Vite 8.3.5.
+No forced major upgrade or production service restart was used.
+
+The original audit reported 10 affected packages (3 high, 7 moderate). Both the full
+audit and `npm audit --omit=dev` now report 0. This is the registry's known-advisory
+result, not a guarantee that the application has no security defects. Relevant
+upstream advisories:
+[Zod](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5),
+[body-parser](https://github.com/advisories/GHSA-27r3-jxmh-p828), and
+[Vitest](https://github.com/advisories/GHSA-qxg6-89mg-rqv8).
+
+A fresh source archive on MSM2-2 passed `npm ci`, typecheck, native-helper build,
+174 Reach tests, and 5 CLI tests. The authenticated headless Chrome download
+verified the actual file and suppressed a repeated request. A second real-browser
+scenario passed client disconnect, server restart, stub coding repair, independent
+local tests, automatic original-task resumption and file verification. This repeat
+used **zero real Codex calls**. The earlier real Codex result remains historical.
+
+MSM2-2 was locked during this run. No visible fixture, focus change, Safari session,
+or exhibition desktop was used. Live visual/focus/occlusion QC and actual ChatGPT
+exposure of the new tools remain unverified. The `main` installation instructions
+now select `main`, rather than the superseded integration branch.
 
 <br />
 

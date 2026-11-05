@@ -4,19 +4,22 @@
 
 Use the AI plan and computer you already pay for. KORA keeps routine work local and calls frontier AI only when intelligence is actually needed.
 
-**ChatGPT-first Mac control is the next product direction.** The v0.2 integration
-branch adds an authenticated MCP computer node, durable background jobs, browser
-and macOS tools, a Reach Console, and an experimental in-chat live-screen viewer.
-This is not yet the tagged stable release. See
+**ChatGPT-first Mac control is available on `main` as an MCP preview.** It includes
+an authenticated computer node, durable background jobs, browser and macOS tools,
+a Reach Console, and an experimental in-chat live-screen viewer. This is not yet
+the tagged stable release. See
 [ChatGPT-first MCP development and setup](docs/CHATGPT_FIRST_MCP.md).
+
+Resumable browser/native control and optional coding repair are being verified
+in [draft PR #3](https://github.com/Krako-Labs/kora-reach/pull/3). They are not yet
+part of `main`. Experimental pointer control remains disabled by default.
 
 The v0.1 stable release below remains a standalone CLI.
 
-For the v0.2 preview, clone the feature branch and run the Phase A Mac setup:
+For the MCP preview, clone `main` and run the Phase A Mac setup:
 
-    git clone https://github.com/Krako-Labs/kora-reach.git
+    git clone --branch main https://github.com/Krako-Labs/kora-reach.git
     cd kora-reach
-    git switch feat/chatgpt-mcp-computer-control
     node scripts/setup-mac.mjs
 
 The installer configures a local service and restricted workspace, but does not expose the Mac online. ChatGPT connection still requires secure HTTPS or Tunnel and explicit approval. See [Phase A installation](docs/PHASE_A_INSTALL.md) and [business models](docs/BUSINESS_MODELS.md).
@@ -43,6 +46,16 @@ Example result:
     83% handled without frontier-model escalation
 
 **Important:** a frontier escalation is one handoff from KORA to the frontier agent runtime. Codex may perform multiple internal model turns during that handoff. KORA does not pretend this number is a raw provider API-call count.
+
+## Find what you need
+
+- [Quick start](#quick-start) — install the standalone CLI.
+- [Mac setup](docs/PHASE_A_INSTALL.md) — install the ChatGPT MCP preview.
+- [Three demos](#three-things-v0-does) — coding, files, and continuing until tests pass.
+- [Safety](#safety) — execution and model-use boundaries.
+- [Contributing](#contributing) — replace routine inference with local work.
+
+<br />
 
 ## Quick start
 
