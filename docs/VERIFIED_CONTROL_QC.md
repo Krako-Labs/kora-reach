@@ -78,6 +78,36 @@ now select `main`, rather than the superseded integration branch.
 
 <br />
 
+## Chrome crash-dialog investigation — 2026-11-05
+
+The user reported repeated macOS Chrome crash dialogs on MSM2-2 after opening
+Screen Sharing. The existing personal Chrome process (PID 66585) had been running
+since November 3 at 11:04 KST and remained running throughout inspection. The
+screenshot matched its existing G App Launcher tab. At inspection, the dialog was
+absent and only that personal Chrome browser process remained.
+
+Unified logs place the two most recent headless fixture shutdowns at 14:11:11 and
+14:11:20 KST. ReportCrash processed a sequence of notifications/open requests
+at 14:16–14:18 KST. No Chrome diagnostic report was available in the inspected user
+or system DiagnosticReports folders. Delayed notifications from earlier fixture
+processes are a hypothesis; the exact crashed process, exception and cause are
+**not established**. Do not claim the personal profile is corrupt or that this
+incident is fixed.
+
+The QC harness previously sent SIGTERM and did not inspect the exit result.
+It now asks only its own Chrome child to exit with SIGINT, records PID/exit
+code/signal, fails QC on early/abnormal/forced exit, and retains failed-run
+evidence. Timeout cleanup remains bounded and targets only that child handle.
+[Chromium's signal handler](https://chromium.googlesource.com/chromium/src/+/HEAD/chrome/browser/chrome_browser_main_posix.cc)
+distinguishes SIGINT's normal exit path from SIGTERM's session-ending path.
+
+Six focused regression tests passed with simulated child processes. Script syntax
+checks passed. **No Chrome process was launched to validate this change**, and the
+earlier 174-test result predates this QC-harness-only change. Its actual Chrome
+shutdown and absence of new crash dialogs still require a controlled retest.
+
+<br />
+
 ## Remaining limits
 
 - Pointer events require `KORA_CONTROL_VISUAL_EVENTS=1`. Keep this unset until dedicated live QC passes. Named CDP and Accessibility actions do not require it.

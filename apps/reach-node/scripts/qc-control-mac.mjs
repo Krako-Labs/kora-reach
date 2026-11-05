@@ -8,6 +8,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import path from "node:path";
 import os from "node:os";
+import { stopChromeFixture } from "./qc-chrome-shutdown.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { loadConfig } from "../dist/src/config.js";
@@ -128,6 +129,7 @@ const call = async (name, args) => {
 };
 let chrome;
 let occluder;
+let passed = false;
 try {
   await mkdir(path.join(profile, "Default"), { recursive: true });
   await writeFile(
@@ -287,9 +289,16 @@ try {
   console.log(
     (nativeApp ? "Native AppKit" : "Existing Chrome") + " / contents verified / repeat suppressed: PASS",
   );
+  passed = true;
 } finally {
+  let cleanupFailure;
   for (const child of [occluder, chrome]) {
-    if (child && child.exitCode === null) {
+    if (!child) continue;
+    if (child === chrome && !nativeApp) {
+      const outcome = await stopChromeFixture(child);
+      console.log("Chrome fixture shutdown", JSON.stringify(outcome));
+      if (!outcome.clean) cleanupFailure = new Error("Chrome fixture did not exit cleanly; QC is not a complete PASS.");
+    } else if (child.exitCode === null && child.signalCode === null) {
       const done = once(child, "exit");
       child.kill();
       await done;
@@ -298,5 +307,7 @@ try {
   await client.close();
   await host.close();
   page.close();
-  await rm(scratch, { force: true, recursive: true });
+  if (passed && !cleanupFailure) await rm(scratch, { force: true, recursive: true });
+  else console.error("QC evidence retained locally:", scratch);
+  if (cleanupFailure) throw cleanupFailure;
 }
