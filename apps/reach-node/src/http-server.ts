@@ -13,6 +13,7 @@ import { createBearerAuth, createHostValidation } from "./auth.js";
 import type { AppConfig } from "./config.js";
 import { errorMessage } from "./errors.js";
 import { createMcpServer, type McpServices } from "./mcp-server.js";
+import { oauthRequestId } from "./oauth-storage.js";
 import { OAUTH_SCOPES, ReachOAuthProvider } from "./oauth.js";
 import { ReachPreviewSessions, reachConsoleApi, reachConsoleStatic, reachPreviewApi } from "./reach-console.js";
 import { ReachJobManager } from "./reach-job-manager.js";
@@ -65,12 +66,15 @@ export async function startHttpServer(
     app.set("trust proxy", config.trustProxyHops);
   }
   app.use((request, response, next) => {
-    if (request.path !== config.endpoint) {
+    const isTokenRequest = config.oauthEnabled && request.method === "POST" && request.path === "/token";
+    if (!isTokenRequest && request.path !== config.endpoint) {
       next();
       return;
     }
     const requestId = randomUUID();
     const startedAt = performance.now();
+    const event = isTokenRequest ? "oauth_token_request" : "mcp_request";
+    if (isTokenRequest) console.info(JSON.stringify({ event, requestId, at: new Date().toISOString(), outcome: "start" }));
     let logged = false;
     response.set("X-Request-Id", requestId);
     const logCompletion = (outcome: "completed" | "aborted") => {
@@ -80,11 +84,12 @@ export async function startHttpServer(
       logged = true;
       console.log(
         JSON.stringify({
-          event: "mcp_request",
+          event,
+          at: new Date().toISOString(),
           requestId,
           httpMethod: request.method,
-          rpcMethod: rpcMethod(request.body),
-          toolName: rpcToolName(request.body),
+          rpcMethod: isTokenRequest ? undefined : rpcMethod(request.body),
+          toolName: isTokenRequest ? undefined : rpcToolName(request.body),
           status: response.statusCode,
           outcome,
           durationMs: Math.round((performance.now() - startedAt) * 10) / 10,
@@ -97,7 +102,7 @@ export async function startHttpServer(
         logCompletion("aborted");
       }
     });
-    next();
+    oauthRequestId.run(requestId, next);
   });
   app.use(createHostValidation(config));
 
@@ -155,6 +160,18 @@ export async function startHttpServer(
       services.fileService.policy?.mode ?? "legacy-unrestricted",
     );
   } catch (error) { await reachJobs?.close(); throw error; }
+  app.get("/api/reach/restart-impact", authenticate, async (_request, response) => {
+    response.set("Cache-Control", "no-store");
+    const browser = await services.browser.status();
+    response.json({
+      managedProcesses: services.processManager.list().filter(p => p.running)
+        .map(({ sessionId, pid, startedAt }) => ({ sessionId, pid, startedAt })),
+      managedBrowser: browser.managed && browser.running,
+      durableJobs: (reachJobs?.list() ?? []).filter(job => job.status === "running" && job.runId)
+        .map(job => ({ id: job.id, runId: job.runId })),
+    });
+  });
+
   if (reachJobs && reachNodes) {
     const reachPreviews = new ReachPreviewSessions();
     app.use("/api/reach/preview", reachPreviewApi(reachJobs, reachNodes, reachPreviews));
@@ -163,7 +180,30 @@ export async function startHttpServer(
     app.get("/", (_request, response) => response.redirect(config.reachConsolePath));
   }
 
+  let lastAuthReady: boolean | undefined;
+  const checkAuth = async () => {
+    let ready = true;
+    try {
+      await oauthProvider!.clientsStore.getClient("reach-readiness-probe");
+    } catch {
+      ready = false;
+    }
+    if (ready !== lastAuthReady) {
+      console.info(JSON.stringify({ event: "oauth_readiness", at: new Date().toISOString(), ready }));
+      lastAuthReady = ready;
+    }
+    return ready;
+  };
+  if (oauthProvider) {
+    app.get("/health/auth", async (_request, response) => {
+      const ready = await checkAuth();
+      response.set("Cache-Control", "no-store").status(ready ? 200 : 503)
+        .json({ status: ready ? "ok" : "unavailable" });
+    });
+  }
+
   app.get("/health", (_request, response) => {
+    const processes = services.processManager.list();
     response.json({
       status: "ok",
       service: "kora-reach",
@@ -171,7 +211,8 @@ export async function startHttpServer(
       transportMode: "stateless-json",
       activeMcpSessions: 0,
       activeMcpRequests,
-      managedProcesses: services.processManager.list().length,
+      managedProcesses: processes.length,
+      activeManagedProcesses: processes.filter(p => p.running).length,
       accessMode: services.fileService.policy?.mode ?? "legacy-unrestricted",
       fullComputerAccess: services.fileService.policy?.fullComputerAccess ?? false,
       unrestrictedHostAccess: services.fileService.policy?.unrestrictedHostAccess ?? true,
@@ -276,7 +317,9 @@ export async function startHttpServer(
     });
   });
 
+  const authCheckInterval = oauthProvider ? setInterval(checkAuth, 30_000).unref() : undefined;
   const close = async (): Promise<void> => {
+    clearInterval(authCheckInterval);
     clearInterval(cleanupInterval);
     const requests = [...activeRequests];
     activeRequests.clear();

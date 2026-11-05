@@ -22,6 +22,7 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { Request, Response } from "express";
 
+import { boundedStorage, logOAuthStage, OAuthStorageUnavailable } from "./oauth-storage.js";
 import { tokensEqual } from "./auth.js";
 import type { AppConfig } from "./config.js";
 
@@ -184,26 +185,47 @@ function parseState(value: string): PersistedOAuthState {
 
 class PersistentOAuthStore implements OAuthRegisteredClientsStore {
   private state = emptyState();
+  private committedState = this.state;
   private loadPromise: Promise<void> | undefined;
-  private mutationQueue: Promise<void> = Promise.resolve();
+  private mutationQueue?: Promise<void>;
+  private activeWrite?: AbortSignal;
 
   constructor(
     private readonly stateFile: string,
     private readonly accessTokenTtlSeconds: number,
     private readonly refreshTokenTtlSeconds: number,
+    private readonly timeoutMs: number,
   ) {}
 
   private async ensureLoaded(): Promise<void> {
-    this.loadPromise ??= (async () => {
+    this.loadPromise ??= boundedStorage(this.timeoutMs, () => "load", async (signal) => {
+      const started = performance.now();
+      logOAuthStage("load", "start", started);
       try {
-        this.state = parseState(await readFile(this.stateFile, "utf8"));
+        const text = await readFile(this.stateFile, { encoding: "utf8", signal });
+        signal.throwIfAborted();
+        this.committedState = this.state = parseState(text);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-          throw error;
+        if (signal.aborted || (error as NodeJS.ErrnoException).code !== "ENOENT") {
+          this.loadPromise = undefined;
+          logOAuthStage("load", "failed", started);
+          throw new OAuthStorageUnavailable();
         }
       }
-    })();
+      logOAuthStage("load", "completed", started);
+    });
     await this.loadPromise;
+  }
+
+  private async waitForWrites(): Promise<void> {
+    await this.ensureLoaded();
+    if (!this.mutationQueue) return;
+    if (this.activeWrite?.aborted) throw new OAuthStorageUnavailable();
+    const queued = this.mutationQueue;
+    const started = performance.now();
+    logOAuthStage("wait", "start", started);
+    await boundedStorage(this.timeoutMs, () => "wait", () => queued);
+    logOAuthStage("wait", "completed", started);
   }
 
   private pruneExpired(): void {
@@ -215,7 +237,7 @@ class PersistentOAuthStore implements OAuthRegisteredClientsStore {
     }
   }
 
-  private async persist(): Promise<void> {
+  private async persist(signal: AbortSignal, beforeCommit: () => void): Promise<void> {
     const directory = path.dirname(this.stateFile);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     // mkdir(mode) does not tighten an already-existing directory.
@@ -229,9 +251,12 @@ class PersistentOAuthStore implements OAuthRegisteredClientsStore {
     try {
       await writeFile(temporaryFile, `${JSON.stringify(this.state, null, 2)}\n`, {
         encoding: "utf8",
+        signal,
         flag: "wx",
         mode: 0o600,
       });
+      signal.throwIfAborted();
+      beforeCommit();
       await rename(temporaryFile, this.stateFile);
     } catch (error) {
       await unlink(temporaryFile).catch(() => undefined);
@@ -241,29 +266,53 @@ class PersistentOAuthStore implements OAuthRegisteredClientsStore {
 
   private async mutate<T>(operation: () => T | Promise<T>): Promise<T> {
     await this.ensureLoaded();
-    const pending = this.mutationQueue.then(async () => {
-      const snapshot = structuredClone(this.state);
-      try {
-        this.pruneExpired();
-        const result = await operation();
-        await this.persist();
-        return result;
-      } catch (error) {
-        this.state = snapshot;
-        throw error;
-      }
+    if (this.activeWrite?.aborted) throw new OAuthStorageUnavailable();
+    const previous = this.mutationQueue;
+    let stage: "wait" | "save" | "commit" = "wait";
+    return boundedStorage(this.timeoutMs, () => stage, (signal) => {
+      const started = performance.now();
+      const pending = (async () => {
+        if (previous) {
+          logOAuthStage("wait", "start", started);
+          await previous;
+          logOAuthStage("wait", "completed", started);
+        }
+        signal.throwIfAborted();
+        this.activeWrite = signal;
+        stage = "save";
+        logOAuthStage(stage, "start", started);
+        const snapshot = this.state;
+        try {
+          this.state = structuredClone(snapshot);
+          this.pruneExpired();
+          const result = await operation();
+          await this.persist(signal, () => {
+            stage = "commit";
+            logOAuthStage(stage, "start", started);
+          });
+          this.committedState = this.state;
+          logOAuthStage(stage, "completed", started);
+          return result;
+        } catch (error) {
+          this.state = snapshot;
+          logOAuthStage(stage, "failed", started);
+          throw error;
+        } finally {
+          this.activeWrite = undefined;
+        }
+      })();
+      const settled = pending.then(() => {}, () => {});
+      this.mutationQueue = settled;
+      void settled.then(() => {
+        if (this.mutationQueue === settled) this.mutationQueue = undefined;
+      });
+      return pending;
     });
-    this.mutationQueue = pending.then(
-      () => undefined,
-      () => undefined,
-    );
-    return pending;
   }
 
   async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
-    await this.ensureLoaded();
-    await this.mutationQueue;
-    const client = this.state.clients[clientId];
+    await this.waitForWrites();
+    const client = this.committedState.clients[clientId];
     if (!client || client.client_id !== clientId || clientMetadataProblem(client)) {
       return undefined;
     }
@@ -397,13 +446,12 @@ class PersistentOAuthStore implements OAuthRegisteredClientsStore {
   }
 
   async getAccessToken(token: string): Promise<StoredToken | undefined> {
-    await this.ensureLoaded();
-    await this.mutationQueue;
-    const stored = this.state.tokens[tokenHash(token)];
+    await this.waitForWrites();
+    const stored = this.committedState.tokens[tokenHash(token)];
     if (!stored || stored.type !== "access" || stored.expiresAt <= Date.now()) {
       return undefined;
     }
-    const client = this.state.clients[stored.clientId];
+    const client = this.committedState.clients[stored.clientId];
     if (!client || clientMetadataProblem(client)) {
       return undefined;
     }
@@ -517,6 +565,7 @@ export class ReachOAuthProvider implements OAuthServerProvider {
       config.oauthStateFile,
       config.oauthAccessTokenTtlSeconds,
       config.oauthRefreshTokenTtlSeconds,
+      config.oauthStorageTimeoutMs,
     );
   }
 
@@ -633,7 +682,8 @@ export class ReachOAuthProvider implements OAuthServerProvider {
         client.grant_types?.includes("refresh_token") ?? false,
       );
     } catch (error) {
-      if (record.expiresAt > Date.now() && !this.authorizationCodes.has(authorizationCode)) {
+      if (!(error instanceof OAuthStorageUnavailable && error.commitPending) &&
+          record.expiresAt > Date.now() && !this.authorizationCodes.has(authorizationCode)) {
         this.authorizationCodes.set(authorizationCode, record);
       }
       throw error;

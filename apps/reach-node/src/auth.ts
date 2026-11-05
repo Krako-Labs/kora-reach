@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
 import type { OAuthTokenVerifier } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 
+import { OAuthStorageUnavailable } from "./oauth-storage.js";
 import type { AppConfig } from "./config.js";
 
 export function tokensEqual(actual: string, expected: string): boolean {
@@ -51,7 +52,11 @@ export function createBearerAuth(
           next();
           return;
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof OAuthStorageUnavailable) {
+          response.status(503).set("Retry-After", "1").json({ error: "temporarily_unavailable" });
+          return;
+        }
         // Return the same challenge for every invalid token.
       }
     }
