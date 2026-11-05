@@ -15,6 +15,7 @@ export interface AppConfig {
   oauthIssuerUrl: string | undefined;
   oauthResourceUrl: string | undefined;
   oauthStateFile: string;
+  oauthStorageTimeoutMs: number;
   oauthAccessTokenTtlSeconds: number;
   oauthRefreshTokenTtlSeconds: number;
   oauthAuthorizationCodeTtlSeconds: number;
@@ -171,6 +172,7 @@ export function loadConfig(
       env.MCP_OAUTH_STATE_FILE?.trim() ||
         path.join(processCwd, ".kora-reach-oauth-state.json"),
     ),
+    oauthStorageTimeoutMs: parseInteger(env.MCP_OAUTH_STORAGE_TIMEOUT_MS, 3000, "MCP_OAUTH_STORAGE_TIMEOUT_MS", 50, 30000),
     oauthAccessTokenTtlSeconds: parseInteger(
       env.MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
       60 * 60,

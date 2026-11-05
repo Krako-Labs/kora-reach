@@ -31,6 +31,10 @@ describe("real Node process restart", () => {
         expect(create.status).toBe(201);
         job = (await create.json() as { job: Job }).job;
         await waitFor(() => read(job!.id), current => current.output.includes("before"));
+        const impact = await fetch(runtime.base + "/api/reach/restart-impact", { headers: runtime.headers });
+        expect(await impact.json()).toMatchObject({
+          durableJobs: [{ id: job.id, runId: job.runId }], managedProcesses: [],
+        });
         await stopHost(host, signal);
         runtime = await launchHost(root);
         host = runtime.child;
