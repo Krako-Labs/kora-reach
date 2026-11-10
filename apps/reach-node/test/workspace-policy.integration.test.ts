@@ -54,6 +54,69 @@ async function fixture(allowExecution: boolean, accessMode: "restricted" | "full
 }
 
 describe("workspace policy over real HTTP", () => {
+  it("rejects control begin, dispatch, background queue and repair under disabled execution", async () => {
+    const f = await fixture(false);
+    await f.start();
+    try {
+      const jobId = "00000000-0000-4000-8000-000000000111";
+      const request = {
+        jobId,
+        plan: {
+          startInBackground: true,
+          onCodeDefect: "repair_once",
+          target: { session: "existing", bundle: "org.example.QC", title: "QC" },
+          button: "Export",
+          verify: { kind: "file", path: path.join(f.workspace, "result.txt"), containsText: "verified" },
+        },
+      };
+      const storedPlan = path.join(f.config.reachStateDirectory, "control-jobs", jobId, "plan.json");
+      const queued = path.join(f.config.reachStateDirectory, "control-repair-queue", jobId);
+      for (const [name, args] of [
+        ["control_begin", request],
+        ["control_run", { jobId }],
+        ["control_repair", { jobId, confirmedCodeDefect: true }],
+      ] as const) {
+        const result = await f.tool(name, args);
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent?.errorDetails).toMatchObject({ code: "WORKSPACE_DENIED" });
+      }
+      await expect(readFile(storedPlan)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(queued)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(path.join(f.workspace, "result.txt"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await f.close(); }
+  });
+
+  it("rejects unauthenticated control plans before writing job state or audit events", async () => {
+    const f = await fixture(true);
+    await f.start();
+    try {
+      const jobId = "00000000-0000-4000-8000-000000000112";
+      const storedPlan = path.join(f.config.reachStateDirectory, "control-jobs", jobId, "plan.json");
+      const queued = path.join(f.config.reachStateDirectory, "control-repair-queue", jobId);
+      const auditPath = path.join(f.config.reachStateDirectory, "audit.jsonl");
+      const beforeAudit = await readFile(auditPath, "utf8");
+      const response = await f.api("/mcp", {
+        jsonrpc: "2.0", id: 1, method: "tools/call",
+        params: {
+          name: "control_begin",
+          arguments: {
+            jobId,
+            plan: {
+              startInBackground: true,
+              target: { session: "existing", bundle: "org.example.QC", title: "QC" },
+              button: "Export",
+              verify: { kind: "file", path: path.join(f.workspace, "result.txt"), containsText: "verified" },
+            },
+          },
+        },
+      }, { Authorization: "Bearer invalid-token", Accept: "application/json, text/event-stream" });
+      expect(response.status).toBe(401);
+      await expect(readFile(storedPlan)).rejects.toMatchObject({ code: "ENOENT" });
+      await expect(readFile(queued)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(auditPath, "utf8")).toBe(beforeAudit);
+    } finally { await f.close(); }
+  });
+
   it("enforces file and execution policy through MCP and Console with private audit", async () => {
     const f = await fixture(false);
     await f.start();

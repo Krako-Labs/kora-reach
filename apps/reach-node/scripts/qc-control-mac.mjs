@@ -259,15 +259,21 @@ try {
       await new Promise((r) => setTimeout(r, 800));
       ({ host, client } = await connect());
     }
-    for (let i = 0; i < 300; i++) {
+    // A deterministic stub should finish quickly. Do not run a 5-minute
+    // silent polling loop when a changed route has prevented the repair.
+    const pollLimit = process.argv.includes("--repair-stub") ? 45 : 300;
+    let repairFinished = false;
+    for (let i = 0; i < pollLimit; i++) {
       const result = await call("control_status", { jobId });
       assert.notEqual(result.status, "session_locked", "Headless code repair must not wait for the desktop");
       if (result.repair.id && result.repair.status !== "running") {
         assert.equal(result.repair.status, "succeeded");
+        repairFinished = true;
         break;
       }
       await new Promise((r) => setTimeout(r, 1000));
     }
+    assert.ok(repairFinished, "Coding repair was not started/completed before the bounded QC deadline");
     assert.equal((await readFile(path.join(repairDir, "label.txt"), "utf8")).trim(), "Download sample");
     // Wait for the server to resume the UI without another control_run call.
     for (let i = 0; i < 25; i++) {

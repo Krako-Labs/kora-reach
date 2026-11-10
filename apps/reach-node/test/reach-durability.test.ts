@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, writeFile, rm, rename, stat, symlink } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { mkdtemp, mkdir, readFile, realpath, writeFile, rm, rename, stat, symlink } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { createServices } from "../src/mcp-server.js";
 import { ReachJobManager } from "../src/reach-job-manager.js";
-import { readResult, runnerRequest, inspectRunner } from "../src/reach-durability.js";
+import { acquireStateWriter, readResult, runnerRequest, inspectRunner } from "../src/reach-durability.js";
 
 const roots: string[] = [];
 const managers = new Set<ReachJobManager>();
@@ -48,6 +48,54 @@ afterEach(async () => {
   }
   managers.clear();
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
+});
+
+describe("durable writer allocation under port collisions", () => {
+  it("does not confuse distinct states with a shared first TCP port", async () => {
+    const scratch = await mkdtemp(path.join(os.tmpdir(), "reach-writer-collision-"));
+    const canonical = await realpath(scratch);
+    let first: string | undefined;
+    let second: string | undefined;
+    const seen = new Map<number, string>();
+    for (let i = 0; i < 3500 && !second; i++) {
+      const candidate = path.join(canonical, "state-" + i);
+      const port = 10000 + createHash("sha256").update(candidate).digest().readUInt32BE(0) % 20000;
+      const previous = seen.get(port);
+      if (previous) { first = previous; second = candidate; }
+      else seen.set(port, candidate);
+    }
+    let a: Awaited<ReturnType<typeof acquireStateWriter>> | undefined;
+    let b: Awaited<ReturnType<typeof acquireStateWriter>> | undefined;
+    try {
+      expect(first).toBeDefined(); expect(second).toBeDefined();
+      await mkdir(first!); await mkdir(second!);
+      a = await acquireStateWriter(first!);
+      b = await acquireStateWriter(second!);
+      expect(a.address()).not.toEqual(b.address());
+      await expect(acquireStateWriter(second!)).rejects.toThrow("reservation is occupied");
+    } finally {
+      if (b) await new Promise<void>(resolve => b!.close(() => resolve()));
+      if (a) await new Promise<void>(resolve => a!.close(() => resolve()));
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when the first port belongs to an unidentified older listener", async () => {
+    const scratch = await mkdtemp(path.join(os.tmpdir(), "reach-writer-legacy-"));
+    const canonical = await realpath(scratch);
+    const port = 10000 + createHash("sha256").update(canonical).digest().readUInt32BE(0) % 20000;
+    const legacy = createServer(socket => socket.destroy());
+    try {
+      await new Promise<void>((resolve, reject) => {
+        legacy.once("error", reject);
+        legacy.listen(port, "127.0.0.1", resolve);
+      });
+      await expect(acquireStateWriter(scratch)).rejects.toThrow("reservation is occupied");
+    } finally {
+      await new Promise<void>(resolve => legacy.close(() => resolve()));
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("M4 durable local jobs", () => {
@@ -268,4 +316,20 @@ describe("M4 durable local jobs", () => {
     const job = await jobs.start("true");
     expect(await until(jobs, job.id, "failed")).toMatchObject({ recovery: "terminal", exitCode: null });
   });
+});
+
+import { durableExclusiveClaim, durableLink } from "../src/reach-durability.js";
+
+it("durably reserves a replay-prevention marker exactly once", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "reach-claim-qc-"));
+  try {
+    const marker = path.join(root, "effect");
+    expect(await durableExclusiveClaim(marker)).toBe(true);
+    expect(await durableExclusiveClaim(marker)).toBe(false);
+    expect(await readFile(marker, "utf8")).toBe("reserved\n");
+    const job = path.join(root, "plan.json");
+    await writeFile(job, JSON.stringify({ jobId: "fixture" }));
+    expect(await durableLink(job, path.join(root, "queued"))).toBe(true);
+    expect(await durableLink(job, path.join(root, "queued"))).toBe(false);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

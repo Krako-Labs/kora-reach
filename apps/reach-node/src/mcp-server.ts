@@ -17,12 +17,16 @@ import { registerComputerTools } from "./computer-tools.js";
 import { registerKoraTools } from "./kora-tools.js";
 import { registerLiveScreen } from "./live-screen-tools.js";
 import { registerBackgroundComputerTools } from "./background-computer-tools.js";
+import { registerReachPreflight } from "./reach-preflight.js";
+import type { ReachNodeIdentity } from "./reach-node-registry.js";
+import { REACH_NODE_PACKAGE_VERSION } from "./runtime-versions.js";
 
 export interface McpServices {
   processManager: ProcessManager;
   fileService: FileService;
   browser: BrowserPort;
   repairJobs?: import("./reach-job-manager.js").ReachJobManager;
+  nodeIdentity?: ReachNodeIdentity;
   existingChrome?: BrowserPort;
   computer: ComputerPort;
 }
@@ -54,16 +58,17 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
   const server = new McpServer(
     {
       name: "kora-reach",
-      version: "0.2.0",
+      version: REACH_NODE_PACKAGE_VERSION,
       ...(config.publicUrl ? { websiteUrl: config.publicUrl } : {}),
     },
     {
       instructions:
-         "KORA Reach connects ChatGPT and other MCP hosts to the user's own Mac. Prefer kora_local_task for known deterministic tests/files/verification without extra model inference. Use authenticated exec_command, filesystem, browser, computer, and process tools for tasks that genuinely require reasoning. For existing browser tabs and Mac windows use control_begin, control_run and control_status. Complete authorized routine diagnostics, safe recovery and verification directly with available tools before asking the user to act. Continue independent work when one path is blocked. For authorized background UI work set startInBackground; a locked session is retained for bounded automatic resumption after unlock. Never bypass authentication or replay an uncertain action. If semantic controls are unavailable and the session permits capture, use control_frame before reporting failure. Never treat local action counts as model token savings; respect local access policy and approvals.",
+         "KORA Reach connects ChatGPT and other MCP hosts to the user's own Mac. First call reach_preflight for Mac tasks when access or capability is unclear; it never changes settings. Prefer kora_local_task for known deterministic tests/files/verification without extra model inference. Use authenticated exec_command, filesystem, browser, computer, and process tools for tasks that genuinely require reasoning. For existing browser tabs and Mac windows use control_begin, control_run and control_status. Complete authorized routine diagnostics, safe recovery and verification directly with available tools before asking the user to act. Continue independent work when one path is blocked. For authorized background UI work set startInBackground; a locked session is retained for bounded automatic resumption after unlock. Never bypass authentication or replay an uncertain action. If semantic controls are unavailable and the session permits capture, use control_frame before reporting failure. Never treat local action counts as model token savings; respect local access policy and approvals.",
       capabilities: { logging: {} },
     },
   );
 
+  registerReachPreflight(server, config, services);
   registerExecTools(
     server,
     config,

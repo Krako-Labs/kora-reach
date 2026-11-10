@@ -1,8 +1,43 @@
 import { createHash, randomUUID } from "node:crypto";
-import { createServer, type Server } from "node:net";
-import { open, rename, readFile, realpath } from "node:fs/promises";
+import { createConnection, createServer, type Server } from "node:net";
+import { open, rename, readFile, realpath, link } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+
+// macOS/Linux durability boundary: synchronise metadata, not just the file data.
+// A completed action must never depend on a reservation that existed only in
+// a volatile directory cache before a host crash.
+export async function syncDirectory(directory: string): Promise<void> {
+  const handle = await open(directory, "r");
+  try { await handle.sync(); }
+  finally { await handle.close(); }
+}
+
+export async function durableExclusiveClaim(target: string, value = "reserved\n"): Promise<boolean> {
+  let handle;
+  try { handle = await open(target, "wx", 0o600); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
+  try {
+    await handle.writeFile(value);
+    await handle.sync();
+  } finally { await handle.close(); }
+  // On fsync failure keep the file and fail closed. Do not dispatch an action.
+  await syncDirectory(path.dirname(target));
+  return true;
+}
+
+export async function durableLink(source: string, target: string): Promise<boolean> {
+  try { await link(source, target); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
+  await syncDirectory(path.dirname(target));
+  return true;
+}
 
 export async function atomicJson(target: string, value: unknown): Promise<void> {
   const temporary = target + "." + randomUUID() + ".tmp";
@@ -10,19 +45,70 @@ export async function atomicJson(target: string, value: unknown): Promise<void> 
   try { await handle.writeFile(JSON.stringify(value) + "\n"); await handle.sync(); }
   finally { await handle.close(); }
   await rename(temporary, target);
+  await syncDirectory(path.dirname(target));
 }
 
 // OS-held reservation: no stale-file deletion and no PID-based lock takeover.
+// A single 15-bit TCP port can collide with a different Reach state directory
+// under parallel tests or on hosts with many nodes. Each new writer publishes
+// an exact canonical-path fingerprint. If a port belongs to a *different new*
+// Reach writer, try another deterministic candidate. A same-path writer, an
+// older/unidentified listener, or a timeout is a hard fail: NEVER risk two
+// writers for one state directory during a mixed-version upgrade.
+const WRITER_SIGNATURE_PREFIX = "kora-reach-state-writer-v1:";
+function writerPort(canonical: string, candidate: number): number {
+  const key = candidate === 0 ? canonical : `${canonical}\0${candidate}`;
+  return 10000 + createHash("sha256").update(key).digest().readUInt32BE(0) % 20000;
+}
+
+async function identifyStateWriter(port: number): Promise<string | undefined> {
+  return await new Promise(resolve => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    let received = "";
+    let finished = false;
+    const finish = (identity?: string) => {
+      if (finished) return;
+      finished = true;
+      socket.destroy();
+      resolve(identity);
+    };
+    socket.setTimeout(750, () => finish());
+    socket.on("data", chunk => {
+      received += String(chunk);
+      if (received.length > 200) finish();
+    });
+    socket.once("end", () => finish(received.trim()));
+    socket.once("error", () => finish());
+    socket.once("close", () => finish(received.trim()));
+  });
+}
+
 export async function acquireStateWriter(directory: string): Promise<Server> {
   const canonical = await realpath(directory);
-  const port = 10000 + createHash("sha256").update(canonical).digest().readUInt32BE(0) % 20000;
-  const server = createServer(socket => socket.destroy());
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", () => reject(new Error("Reach state writer reservation is occupied")));
-    server.listen({ host: "127.0.0.1", port, exclusive: true }, resolve);
-  });
-  server.unref();
-  return server;
+  const signature = WRITER_SIGNATURE_PREFIX + createHash("sha256").update(canonical).digest("hex");
+  const attempted = new Set<number>();
+  for (let candidate = 0; candidate < 8; candidate++) {
+    const port = writerPort(canonical, candidate);
+    if (attempted.has(port)) continue;
+    attempted.add(port);
+    const server = createServer(socket => socket.end(signature + "\n"));
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen({ host: "127.0.0.1", port, exclusive: true }, resolve);
+      });
+      server.unref();
+      return server;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
+      const owner = await identifyStateWriter(port);
+      if (!owner?.startsWith(WRITER_SIGNATURE_PREFIX) || owner === signature) {
+        throw new Error("Reach state writer reservation is occupied");
+      }
+      // Another *identified* state directory owns this port; continue.
+    }
+  }
+  throw new Error("Reach state writer reservation is occupied");
 }
 
 export const runnerResultSchema = z.object({

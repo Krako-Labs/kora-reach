@@ -11,7 +11,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const destination = process.argv[2];
 if (!destination || !path.isAbsolute(destination)) throw new Error("Provide an absolute output directory.");
 const git = args => execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
-git(["diff", "--quiet", "HEAD"]);
+// A tracked-only diff misses new source files. Never give uncommitted bytes
+// the identity of HEAD, including newly added files compiled into dist.
+if (git(["status", "--porcelain=v1", "--untracked-files=all"])) {
+  throw new Error("Package refused: commit all intended source and remove unrelated untracked files before building.");
+}
 const commit = git(["rev-parse", "HEAD"]);
 execFileSync("npm", ["run", "build"], {cwd:path.join(root,"apps/reach-node"),stdio:"inherit"});
 const temporary = await mkdtemp(path.join(os.tmpdir(),"reach-package-"));
@@ -26,8 +30,9 @@ try {
     await mkdir(path.dirname(dest),{recursive:true});
     await cp(path.join(root,relative),dest,{recursive:true});
   }
+  const nodeManifest = JSON.parse(await readFile(path.join(root,"apps/reach-node/package.json"),"utf8"));
   await writeFile(path.join(staged,"BUILD.json"),JSON.stringify({
-    format:1,commit,platform:process.platform,architecture:process.arch,
+    format:1,commit,nodePackageVersion:nodeManifest.version,platform:process.platform,architecture:process.arch,
     node:process.versions.node,kind:"candidate",productionCertified:false,
     install:"cd apps/reach-node && npm ci --omit=dev",
     entrypoint:"apps/reach-node/dist/src/server.js",

@@ -19,10 +19,11 @@
   ],
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check bin/kora.js && node --check src/core.js && node --check scripts/make-demo-repo.mjs && node --check scripts/make-file-demo.mjs && npm test",
+    "check": "node --check bin/kora.js && node --check src/core.js && node --check scripts/access-doctor.mjs && node --check scripts/make-demo-repo.mjs && node --check scripts/make-file-demo.mjs && npm test",
     "demo:fixture": "node scripts/make-demo-repo.mjs",
     "demo:files": "node scripts/make-file-demo.mjs",
-    "setup:mac": "node scripts/setup-mac.mjs"
+    "setup:mac": "node scripts/setup-mac.mjs",
+    "access:doctor": "node scripts/access-doctor.mjs"
   },
   "repository": {
     "type": "git",

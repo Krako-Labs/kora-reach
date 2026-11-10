@@ -1,3 +1,4 @@
+import { REACH_HTTP_CONTRACT_VERSION, REACH_NODE_PACKAGE_VERSION } from "./runtime-versions.js";
 import { registerControlWorkflow } from "./control-workflow.js";
 import { randomUUID } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
@@ -155,6 +156,9 @@ export async function startHttpServer(
   const reachNodes = config.reachConsoleEnabled
     ? await ReachNodeRegistry.open(config).catch(async error => { await reachJobs?.close(); throw error; })
     : undefined;
+  // The Console's persistent node registry is the source of local identity.
+  // Do not generate temporary IDs for preflight requests.
+  services.nodeIdentity = reachNodes?.identity();
   try {
     services.fileService.audit.startup(
       services.fileService.policy?.digest,
@@ -209,7 +213,8 @@ export async function startHttpServer(
     response.json({
       status: "ok",
       service: "kora-reach",
-      version: "0.5.0",
+      version: REACH_HTTP_CONTRACT_VERSION,
+      nodePackageVersion: REACH_NODE_PACKAGE_VERSION,
       transportMode: "stateless-json",
       activeMcpSessions: 0,
       activeMcpRequests,
@@ -222,6 +227,10 @@ export async function startHttpServer(
       workspaceRestricted: services.fileService.policy?.restricted ?? false,
       executionAllowed: services.fileService.policy?.allowExecution ?? true,
       executionSandboxed: false,
+      // Runtime effective policy, never infer it from the disk file alone.
+      accessDiagnosticsVersion: 1,
+      elevatedExecutionRisk: (services.fileService.policy?.restricted ?? false) &&
+        (services.fileService.policy?.allowExecution ?? false),
       oauthEnabled: config.oauthEnabled,
       consoleEnabled: config.reachConsoleEnabled,
       consolePath: config.reachConsolePath,

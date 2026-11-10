@@ -145,3 +145,41 @@ macTest("keeps a directly observed DOM defect actionable while the native fallba
   await expect(readFile(queued(id))).rejects.toMatchObject({code:"ENOENT"});
   expect(native.presses).toBe(0);
 });
+
+macTest("guarded downloads never select tabs, inspect AX, or press when CDP is missing", async()=>{
+  native.locked=false;
+  services.existingChrome={
+    listTabs:async()=>[],
+    captureDownload:async()=>{throw Error("unexpected download");},
+  };
+  const id=await begin({
+    target:{session:"existing",bundle:"com.google.Chrome",title:"QC",origin:"https://example.org"},
+    captureDownload:true,
+  });
+  const result=await call("control_run",{jobId:id});
+  expect(result).toMatchObject({status:"capture_route_unavailable"});
+  expect(native.observes).toBe(0);
+  expect(native.presses).toBe(0);
+  await expect(readFile(path.join(folder(id),"effect"))).rejects.toMatchObject({code:"ENOENT"});
+});
+
+
+macTest("a missing CDP download button stays eligible for repair without an AX action", async()=>{
+  native.locked=false;
+  const tab={id:"fixture",title:"QC",origin:"https://example.org",url:"https://example.org"};
+  services.existingChrome={
+    listTabs:async()=>[tab],
+    snapshot:async()=>({origin:tab.origin,truncated:false,elements:[]}),
+    captureDownload:async()=>{throw Error("unexpected download");},
+  };
+  const id=await begin({
+    target:{session:"existing",bundle:"com.google.Chrome",title:"QC",origin:tab.origin},
+    captureDownload:true,
+    onCodeDefect:"repair_once",
+  });
+  const result=await call("control_run",{jobId:id});
+  expect(result).toMatchObject({status:"web_control_missing"});
+  expect(native.observes).toBe(0);
+  expect(native.presses).toBe(0);
+  await expect(readFile(path.join(folder(id),"effect"))).rejects.toMatchObject({code:"ENOENT"});
+});

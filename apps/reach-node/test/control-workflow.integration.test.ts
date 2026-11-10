@@ -11,6 +11,7 @@ import { loadConfig } from "../src/config.js";
 import { startHttpServer, type RunningHttpServer } from "../src/http-server.js";
 
 let root: string, id: string, server: RunningHttpServer, client: Client;
+let services: ReturnType<typeof createServices>;
 let count: number, ambiguous: boolean, uncertain: boolean;
 const target = {
   session: "managed",
@@ -35,7 +36,7 @@ async function boot() {
     root,
   );
   config.port = 0;
-  const services = createServices(config);
+  services = createServices(config);
   vi.spyOn(services.browser, "listTabs").mockImplementation(async () =>
     ambiguous ? [tab, { ...tab, id: "tab-2" }] : [tab],
   );
@@ -177,4 +178,37 @@ it("quarantines a malformed queued plan without starving a valid job", async () 
   expect(JSON.parse(await readFile(path.join(folder,"last.json"),"utf8"))).toMatchObject({status:"background_reconciliation_failed"});
   await expect(readFile(path.join(queue,bad))).rejects.toMatchObject({code:"ENOENT"});
   expect(count).toBe(1);
+});
+
+it.each(["ELEMENT_NOT_FOUND", "ELEMENT_NOT_VISIBLE", "ELEMENT_DISABLED", "STALE_ELEMENT", "TAB_NOT_FOUND"])(
+  "keeps captureDownload guarded when CDP fails before dispatch (%s)",
+  async code => {
+    const attempts = vi.fn(async () => {
+      throw Object.assign(new Error("CDP failed before action"), { code });
+    });
+    vi.spyOn(services.browser, "captureDownload").mockImplementation(attempts);
+    const p = payload().plan;
+    await call("control_begin", { jobId: id, plan: { ...p, captureDownload: true } });
+    const response = await call("control_run", { jobId: id });
+    expect(response.structuredContent).toMatchObject({ status: "capture_route_unavailable" });
+    expect(attempts).toHaveBeenCalledTimes(1);
+    expect(count).toBe(0); // The generic CDP click is NOT used as a workaround.
+    await expect(readFile(path.join(root, "output"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(path.join(root, "state", "control-jobs", id, "effect")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
+
+it("does not click when a captureDownload route lacks the guarded adapter", async () => {
+  Object.assign(services.browser, { captureDownload: undefined });
+  const p = payload().plan;
+  await call("control_begin", { jobId: id, plan: { ...p, captureDownload: true } });
+  expect((await call("control_run", { jobId: id })).structuredContent)
+    .toMatchObject({ status: "capture_route_unavailable" });
+  expect((await call("control_status", { jobId: id })).structuredContent)
+    .toMatchObject({ status: "capture_route_unavailable" });
+  expect(count).toBe(0);
+  await expect(readFile(path.join(root, "output"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(readFile(path.join(root, "state", "control-jobs", id, "effect")))
+    .rejects.toMatchObject({ code: "ENOENT" });
 });

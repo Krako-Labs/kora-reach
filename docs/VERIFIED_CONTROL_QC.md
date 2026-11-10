@@ -250,3 +250,91 @@ The last command tests continuation with a stub repair executable. To test the r
 Visible tests must use a dedicated idle Mac. Never use an active user's desktop or an exhibition/demo computer. They require both a matching `KORA_UI_QC_HOST` environment value and `--allow-visible-ui`. Available scenarios include `--native-only`, `--cdp-down`, `--app`, `--sheet`, and `--visual`. The visual scenario explicitly enables experimental pointer events for its disposable test only.
 
 MSM2-2 now runs the limited Node preview described above. This does not establish a successful live-window release gate or authorize rollout to other hosts.
+
+<br />
+
+## Local hardening after gStack review — November 10, 2026
+
+The independent, read-only gStack-style review identified two release-blocking
+failure modes: an insufficiently durable replay-prevention claim and unsafe
+native fallback for a guarded download. The **uncommitted local candidate**
+now synchronizes its effect marker and parent directory before dispatch and
+forbids unguarded native/AppleScript/Accessibility fallback for `captureDownload`.
+Regression tests cover five CDP pre-dispatch errors and native-route exclusion.
+
+The same candidate includes a read-only Access Doctor with authenticated
+tool discovery, explicit loopback-only credential routing, and separate
+`/health/auth` outcomes. A missing readiness endpoint (404) is classified
+as an unsupported deployed diagnostic, not as a proven OAuth outage. New
+installations default to restricted file roots without shell execution.
+
+**Local checks:** CLI 5/5, Reach Node 216/216 in 37 test files on Node26 and locally provisioned Node22.23.4, build/Swift
+helpers/typecheck PASS. Real isolated Chrome download and locked-queue restart
+checks PASS; both fixture Chrome exits were clean. Production dependency
+audit reported 0 known vulnerabilities. A fresh source snapshot installed
+96 production packages offline and passed an authenticated MCP runtime
+smoke test with a restricted workspace. The proposed macOS/Node22 CI
+workflow is not committed or executed remotely.
+
+**Still not a release PASS:** MSM2-2 remained locked, so final native
+focus/occlusion/save-sheet QC was not run. The running MCP services were
+not upgraded or restarted, and the remote PR head remains unchanged.
+Hardware power-loss durability, hosted CI and real deployment parity
+remain pending. See
+[the dated checkpoint](checkpoints/2026-11-10-autonomous-reach-hardening.md)
+for exact evidence, source identity and remaining gates.
+
+
+A real headless `--repair --repair-stub --restart --unattended` run found a
+regression that the initial unit suite missed: guarded downloads no longer
+identified a definitively missing web control as eligible for authorized
+coding repair. The route now preserves `web_control_missing` without
+falling back to native input. The repeated full Node26 and Node22 suites
+passed 216/216, and the real isolated stub-repair, restart, local test,
+automatic original-task resume, file verification and clean Chrome shutdown
+subsequently **passed**. A 45-second stub-specific deadline prevents this
+QA path from silently polling for five minutes if the repair never starts.
+Three isolated disk-sync `EIO` injection cases also passed: uncertain
+action claims and queue links remain reserved on failure. This is not a
+physical power-loss test.
+
+## Read-only Reach-first capability entry point — November 10, 2026
+
+The local (not deployed) PR #3 candidate adds `reach_preflight` as a narrow MCP
+entry point. It reports **effective** workspace/shell policy and current
+managed/attached Chrome connection without starting a browser or changing
+permissions. macOS grant checks are optional and do not certify an unlocked
+GUI. The response intentionally omits workspace roots, bearer tokens, Chrome
+profile paths, tab URLs and CDP ports. It reports deployed/source parity as
+**not verified** until a separate build-identity check can prove it.
+
+Real authenticated MCP tests cover restricted shell disabled, full access,
+optional permission inspection and no browser launch. No claim is made that
+ChatGPT automatically chooses this tool in a new conversation. That host-side
+tool-selection gate remains open, independent of server test success.
+
+## Writer-port collision recovery — November 10, 2026
+
+Two full-suite runs independently exposed `Reach state writer reservation is
+occupied` in **different** fixture suites even though they used separate
+state directories. The original single deterministic TCP port was the likely
+cause: a 20,000-port namespace is not collision-free when many test workers
+open independent Reach managers. It fails closed, but falsely blocks an
+otherwise healthy node.
+
+The local candidate now identifies a conflicting new Reach writer by an exact
+canonical-directory fingerprint. It tries another deterministic candidate
+**only if the first port is positively identified as belonging to a different
+state directory**. The same canonical directory, old/unknown listener,
+connection failure and timeout all remain fail-closed. It never unlinks
+reservation files or takes over a stored PID. Regression tests construct a
+real first-port hash collision and a simulated legacy unidentified listener.
+
+Validation after this change: full Node suite **221/221 PASS** across 38
+files, three further consecutive Node test runs **221/221 PASS** each; root
+CLI **5/5 PASS**. Real isolated headless Chrome download and stub coding
+repair/restart/original-task continuation passed with clean browser exits
+(code 0, no forced signal). A fresh isolated source install passed full QC,
+production-only dependency installation and authenticated/unauthenticated
+loopback MCP smoke tests. These local passes do **not** substitute for hosted
+CI, a final live GUI test, an actual power-loss test or deployment parity.

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants, existsSync } from "node:fs";
-import { link, mkdir, mkdtemp, open, lstat, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, open, lstat, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +10,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod/v4";
 import type { McpServices } from "./mcp-server.js";
 import type { AppConfig } from "./config.js";
-import { atomicJson } from "./reach-durability.js";
+import { atomicJson, durableExclusiveClaim, durableLink, syncDirectory } from "./reach-durability.js";
 import { FileEvidence } from "./file-evidence.js";
 import { locateKoraCli } from "./kora-tools.js";
 import { errorResult, imageResult, runAuditedTool } from "./tool-result.js";
@@ -175,7 +175,7 @@ export function registerControlWorkflow(
       }),
   );
 
-  async function inspect(t: Target, name: string, allowSelection: boolean, skipDOM = false) {
+  async function inspect(t: Target, name: string, allowSelection: boolean, skipDOM = false, requireCDP = false) {
     const attempts: string[] = [];
     const dom =
       t.session === "managed"
@@ -208,6 +208,15 @@ export function registerControlWorkflow(
       if (t.session === "managed" && !browser.managedPid?.())
         return { status: "managed_identity_unavailable", attempts };
     }
+    // Guarded downloads cannot use AX, OCR, AppleScript tab selection or
+    // native clicks: those paths cannot control the file destination.
+    // A definite missing DOM control is a code-defect signal even for guarded
+    // downloads. Return it for the optional authorized repair workflow, but
+    // NEVER fall back to an unguarded native click or tab selection.
+    if (requireCDP) return {
+      status: attempts.includes("cdp_control_missing") ? "web_control_missing" : "capture_route_unavailable",
+      attempts,
+    };
     let view = await native("observe", t, name);
     if (allowSelection && t.session === "existing" && view.status === "window_missing" && t.origin) {
       try {
@@ -262,13 +271,7 @@ export function registerControlWorkflow(
     }
   }
   async function claim(id: string, key: string) {
-    try {
-      await writeFile(path.join(dir(id), key), "reserved\n", { flag: "wx", mode: 0o600 });
-      return true;
-    } catch (e) {
-      if (codeIs(e, "EEXIST")) return false;
-      throw e;
-    }
+    return durableExclusiveClaim(path.join(dir(id), key));
   }
   async function readStatus(id: string) {
     const p = await load(id);
@@ -311,14 +314,17 @@ export function registerControlWorkflow(
         files.policy?.execution();
         if (p.verify.kind === "file") files.resolve(p.verify.path);
         await mkdir(dir(jobId), { recursive: true, mode: 0o700 });
+        await syncDirectory(path.dirname(dir(jobId)));
         const filename = path.join(dir(jobId), "plan.json");
         // Publish a completely written immutable plan, even across competing clients.
         const temporary = path.join(dir(jobId), randomUUID() + ".tmp");
-        await writeFile(temporary, JSON.stringify(p), { mode: 0o600, flag: "wx" });
+        const planFile = await open(temporary, "wx", 0o600);
         try {
-          await link(temporary, filename);
-        } catch (e) {
-          if (!codeIs(e, "EEXIST")) throw e;
+          await planFile.writeFile(JSON.stringify(p));
+          await planFile.sync();
+        } finally { await planFile.close(); }
+        try {
+          await durableLink(temporary, filename);
         } finally {
           await rm(temporary, { force: true });
         }
@@ -326,11 +332,8 @@ export function registerControlWorkflow(
           throw new Error("Job ID belongs to another plan");
         if (p.startInBackground) {
           await mkdir(queue, { recursive: true, mode: 0o700 });
-          try {
-            await link(filename, path.join(queue, jobId));
-          } catch (e) {
-            if (!codeIs(e, "EEXIST")) throw e;
-          }
+          await syncDirectory(path.dirname(queue));
+          await durableLink(filename, path.join(queue, jobId));
         }
         return readStatus(jobId);
       }),
@@ -386,7 +389,17 @@ export function registerControlWorkflow(
       }
     }
     if (before.repair.status === "running" || before.repair.status === "reserved") return before;
-    const route = await inspect(p.target, p.button, true, skipDOM);
+    // Fail before any native inspection, focus or tab selection if the
+    // requested capture capability is not present on this browser session.
+    const domForCapture = p.target.session === "managed" ? browser : services.existingChrome;
+    if (p.captureDownload && (p.verify.kind !== "file" ||
+        p.target.bundle !== "com.google.Chrome" || !domForCapture?.captureDownload)) {
+      // Reconciliation must show the same safe, pre-dispatch failure instead
+      // of reverting to "planned" after the request returns.
+      await atomicJson(path.join(dir(jobId), "last.json"), { status: "capture_route_unavailable" });
+      return { jobId, status: "capture_route_unavailable", next: "CDP download capture is required; no action dispatched." };
+    }
+    const route = await inspect(p.target, p.button, true, skipDOM, p.captureDownload);
     if (route.status === "visual_review" && !point) {
       // Focus only with the saved plan's permission, before capturing a new frame.
       // Never raise a window underneath a caller-supplied coordinate frame.
@@ -431,6 +444,13 @@ export function registerControlWorkflow(
       const f = await frame(p.target);
       if (frameDigest(f) !== point.frameHash) return { jobId, status: "frame_changed" };
       at = [f.id, point.x, point.y, f.pid].join(",");
+    }
+    // Download capture owns its destination and verification. A generic native
+    // click has no equivalent destination guarantee: never silently fall back.
+    if (p.captureDownload && (route.route !== "cdp" ||
+        p.verify.kind !== "file" ||
+        !(p.target.session === "managed" ? browser : services.existingChrome)?.captureDownload)) {
+      return { jobId, status: "capture_route_unavailable", next: "Use a verified CDP download route; no action dispatched." };
     }
     if (!(await claim(jobId, "effect"))) return readStatus(jobId);
     let result = "outcome_unknown";
@@ -490,7 +510,12 @@ export function registerControlWorkflow(
       });
     }
     if (result === "cdp_before_dispatch" && !skipDOM) {
+      // A native fallback would lose captureDownload's guarded destination.
+      // A confirmed pre-dispatch error is safe to retry only with the same
+      // verified CDP capability, never through an unguarded native click.
       await rm(path.join(dir(jobId), "effect"), { force: true });
+      await syncDirectory(dir(jobId));
+      if (p.captureDownload) return { jobId, status: "capture_route_unavailable", next: "CDP download unavailable; no native click dispatched." };
       return runStep(jobId, point, false, true);
     }
     if (
@@ -505,6 +530,7 @@ export function registerControlWorkflow(
     ) {
       // These helper statuses are all returned before any mouse or AX event.
       await rm(path.join(dir(jobId), "effect"), { force: true });
+      await syncDirectory(dir(jobId));
     }
     return readStatus(jobId);
   }
@@ -587,11 +613,8 @@ export function registerControlWorkflow(
       .map(quote)
       .join(" ");
     await mkdir(queue, { recursive: true, mode: 0o700 });
-    try {
-      await link(path.join(dir(jobId), "plan.json"), path.join(queue, jobId));
-    } catch (e) {
-      if (!codeIs(e, "EEXIST")) throw e;
-    }
+    await syncDirectory(path.dirname(queue));
+    await durableLink(path.join(dir(jobId), "plan.json"), path.join(queue, jobId));
     const task = await jobs.start(command, cwd);
     await atomicJson(path.join(dir(jobId), "repair.json"), { id: task.id });
     return {

@@ -15,7 +15,39 @@ run programs, operate a browser or Mac, and control long-running jobs.
 The UI integration is experimental. The live screen viewer requires an
 MCP Apps-compatible host and an accessible Mac GUI display.
 
+## Check Reach before reporting an access failure
+
+Authenticated clients can call **`reach_preflight`** first. It reports the
+running node's effective file/shell access policy, managed and existing Chrome
+connection state, and whether GUI permissions were inspected. It is read-only:
+it never starts Chrome, selects accounts, reads credentials, changes settings,
+or attempts a filesystem operation. Set `includeOsPermissions: true` to inspect
+macOS Accessibility and Screen Recording grants. This is still not a test of
+an unlocked GUI or a particular file, browser account, or action.
+
+`reach_preflight` is one entry point **after the MCP client chooses Reach**;
+the Reach service cannot force ChatGPT to discover or invoke a connector. A
+new chat's first-choice tool selection and the deployed runtime's exact build
+identity require separate verification. If the response says `not_connected`,
+check a separately authorized browser route before concluding Chrome is unusable.
+
 ## Diagnose a connected app that cannot run tools
+
+From the source checkout, run the read-only Access Doctor. It checks the
+**running service** and its effective access mode instead of assuming that a
+connection-status indicator proves tool access.
+
+```sh
+npm run access:doctor -- --path "$HOME/KORA-Workspace"
+```
+
+`--probe-shell` performs a separate read-only shell permission probe if shell
+execution is independently permitted. `--probe` additionally writes and
+deletes only a disposable fixture in an explicitly authorized directory.
+Neither flag is enabled by default. A workspace-policy denial must not be
+bypassed through a differently authorized tool. The installer defaults to
+restricted roots with shell execution disabled. An operator can explicitly
+change this policy later, subject to the Mac's security permissions.
 
 When OAuth is enabled, Reach checks the credential lookup path every 30 seconds
 and logs readiness changes. To check it immediately, send a GET to
