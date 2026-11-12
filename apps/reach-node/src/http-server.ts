@@ -1,4 +1,8 @@
 import { REACH_HTTP_CONTRACT_VERSION, REACH_NODE_PACKAGE_VERSION } from "./runtime-versions.js";
+import { readReachBuildIdentity } from "./reach-build-identity.js";
+import { boundedReadOnlyProbe } from "./read-only-probe.js";
+import { ReachRequestAdmissionFence } from "./reach-request-admission.js";
+import { inspectDurableControlEffects } from "./reach-maintenance-evidence.js";
 import { registerControlWorkflow } from "./control-workflow.js";
 import { randomUUID } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
@@ -19,6 +23,7 @@ import { oauthRequestId } from "./oauth-storage.js";
 import { OAUTH_SCOPES, ReachOAuthProvider } from "./oauth.js";
 import { ReachPreviewSessions, reachConsoleApi, reachConsoleStatic, reachPreviewApi } from "./reach-console.js";
 import { ReachJobManager } from "./reach-job-manager.js";
+import { ReachGoalStore } from "./reach-goals.js";
 import { ReachNodeRegistry } from "./reach-node-registry.js";
 
 interface ActiveRequest {
@@ -28,6 +33,8 @@ interface ActiveRequest {
 export interface RunningHttpServer {
   httpServer: HttpServer;
   close: () => Promise<void>;
+  /** In-process test inspection only; NOT permission to activate a live service switch. */
+  admission: ReachRequestAdmissionFence;
 }
 
 function rpcError(response: Response, status: number, message: string): void {
@@ -62,7 +69,16 @@ export async function startHttpServer(
   config: AppConfig,
   services: McpServices,
 ): Promise<RunningHttpServer> {
+  // Inspect the actual running package once. Unsigned BUILD.json is only
+  // provenance evidence, never an assertion that deployment is certified.
+  const runtimeBuild = await readReachBuildIdentity();
   const app = express();
+  // Installed only after the live services are initialized. The fixture gate
+  // fails closed until the server owns its own idle inspection.
+  let trustedFixtureIdleProbe: (() => Promise<boolean>) | undefined;
+  const admission = new ReachRequestAdmissionFence(
+    async () => await trustedFixtureIdleProbe?.() === true,
+  );
   app.disable("x-powered-by");
   if (config.trustProxyHops > 0) {
     app.set("trust proxy", config.trustProxyHops);
@@ -107,9 +123,31 @@ export async function startHttpServer(
     oauthRequestId.run(requestId, next);
   });
   app.use(createHostValidation(config));
+  // The same synchronous fence covers MCP, Console, OAuth and public routes.
+  // Health remains readable during a fixture maintenance inspection. This is
+  // NOT an OS-wide service-switch lock or proof that detached runners are idle.
+  app.use((request, response, next) => {
+    if (request.path === "/health" || request.path === "/health/auth") {
+      next();
+      return;
+    }
+    const release = admission.enter();
+    if (!release) {
+      response.set("Retry-After", "1").set("Cache-Control", "no-store")
+        .status(503).json({ error: "Reach maintenance admission closed" });
+      return;
+    }
+    response.once("finish", release);
+    response.once("close", () => {
+      if (!response.writableEnded) admission.noteUncertainDisconnect();
+      release();
+    });
+    next();
+  });
 
   const activeRequests = new Set<ActiveRequest>();
   let activeMcpRequests = 0;
+  let pendingResume: Promise<void> | undefined;
   const oauthProvider = config.oauthEnabled ? new ReachOAuthProvider(config) : undefined;
   if (oauthProvider) {
     app.get("/.well-known/oauth-protected-resource", (_request, response) => {
@@ -159,6 +197,31 @@ export async function startHttpServer(
   // The Console's persistent node registry is the source of local identity.
   // Do not generate temporary IDs for preflight requests.
   services.nodeIdentity = reachNodes?.identity();
+  const reachGoals = reachJobs && reachNodes ? new ReachGoalStore(config.reachStateDirectory, reachJobs, reachNodes.identity()) : undefined;
+  services.goals = reachGoals;
+  trustedFixtureIdleProbe = async () => {
+    // This check is for disposable Vitest Node instances only. It is NOT a
+    // cross-process lease, and cannot authorize an operational update.
+    if (!reachJobs || pendingResume || activeMcpRequests > 0) return false;
+    if ((await boundedReadOnlyProbe(() => inspectDurableControlEffects(config.reachStateDirectory))) !== "idle") return false;
+    try {
+      if (reachJobs.list().some(job =>
+        job.status === "running" || job.status === "interrupted" || job.recovery === "unverified"
+      )) return false;
+      if (services.processManager.list().some(process => process.running)) return false;
+      const [managed, attached] = await Promise.all([
+        boundedReadOnlyProbe(() => services.browser.status()),
+        services.existingChrome
+          ? boundedReadOnlyProbe(() => services.existingChrome!.status())
+          : Promise.resolve(undefined),
+      ]);
+      if (!managed || managed.running || managed.connected) return false;
+      if (services.existingChrome && (!attached || attached.running || attached.connected)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  };
   try {
     services.fileService.audit.startup(
       services.fileService.policy?.digest,
@@ -168,20 +231,36 @@ export async function startHttpServer(
   } catch (error) { await reachJobs?.close(); throw error; }
   app.get("/api/reach/restart-impact", authenticate, async (_request, response) => {
     response.set("Cache-Control", "no-store");
-    const browser = await services.browser.status();
+    // A snapshot is diagnostic evidence, NOT an exclusive service-idle lock.
+    // Never silently hide a browser probe failure or an active job that lacks a
+    // durable runner ID: either condition must block unattended activation.
+    const browser = await boundedReadOnlyProbe(() => services.browser.status());
+    const jobs = reachJobs?.list();
+    const durableControlEffects = await boundedReadOnlyProbe(
+      () => inspectDurableControlEffects(config.reachStateDirectory),
+    ) ?? "unavailable";
     response.json({
+      observedAt: new Date().toISOString(),
+      atomicSnapshot: false,
+      idleConfirmed: false,
+      activeMcpRequests,
+      backgroundReconciliationActive: Boolean(pendingResume),
+      jobInspectionAvailable: Boolean(jobs),
+      // Status only. Never expose a job path, claim body, or an account identifier.
+      durableControlEffects,
+      browserInspectionAvailable: Boolean(browser),
       managedProcesses: services.processManager.list().filter(p => p.running)
         .map(({ sessionId, pid, startedAt }) => ({ sessionId, pid, startedAt })),
-      managedBrowser: browser.managed && browser.running,
-      durableJobs: (reachJobs?.list() ?? []).filter(job => job.status === "running" && job.runId)
-        .map(job => ({ id: job.id, runId: job.runId })),
+      managedBrowser: browser ? browser.managed && browser.running : null,
+      durableJobs: (jobs ?? []).filter(job => job.status === "running")
+        .map(job => ({ id: job.id, runId: job.runId ?? null })),
     });
   });
 
   if (reachJobs && reachNodes) {
     const reachPreviews = new ReachPreviewSessions();
     app.use("/api/reach/preview", reachPreviewApi(reachJobs, reachNodes, reachPreviews));
-    app.use("/api/reach", authenticate, reachConsoleApi(reachJobs, reachNodes, reachPreviews));
+    app.use("/api/reach", authenticate, reachConsoleApi(reachJobs, reachNodes, reachPreviews, reachGoals));
     app.use(config.reachConsolePath, reachConsoleStatic());
     app.get("/", (_request, response) => response.redirect(config.reachConsolePath));
   }
@@ -215,6 +294,7 @@ export async function startHttpServer(
       service: "kora-reach",
       version: REACH_HTTP_CONTRACT_VERSION,
       nodePackageVersion: REACH_NODE_PACKAGE_VERSION,
+      runtimeBuild,
       transportMode: "stateless-json",
       activeMcpSessions: 0,
       activeMcpRequests,
@@ -234,8 +314,8 @@ export async function startHttpServer(
       oauthEnabled: config.oauthEnabled,
       consoleEnabled: config.reachConsoleEnabled,
       consolePath: config.reachConsolePath,
-      nodeId: reachNodes?.identity().id,
-      nodeName: reachNodes?.identity().name,
+      // The public liveness endpoint must not expose persistent Mac identity.
+      // Authenticated reach_preflight and Console APIs own that information.
       reachProtocolVersion: reachNodes?.identity().protocolVersion,
     });
   });
@@ -329,12 +409,17 @@ export async function startHttpServer(
   });
 
   const resume = registerControlWorkflow(undefined, config, services);
-  let pendingResume: Promise<void> | undefined;
   const resumeInterval = setInterval(() => {
-    pendingResume ??= resume()
+    if (pendingResume) return;
+    const release = admission.enter();
+    if (!release) return;
+    pendingResume = Promise.resolve().then(resume)
       .catch(() => console.error("Control repair reconciliation failed"))
-      .finally(() => { pendingResume = undefined; });
+      .finally(() => { pendingResume = undefined; release(); });
   }, 2000).unref();
+  // Opt-in P2 receipt observation is bounded by the same admission fence as
+  // MCP/Console requests. It does not dispatch jobs or use the model.
+  reachGoals?.startAuthorizedContinuation(() => admission.enter());
   const authCheckInterval = oauthProvider ? setInterval(checkAuth, 30_000).unref() : undefined;
   const close = async (): Promise<void> => {
     clearInterval(resumeInterval);
@@ -345,6 +430,7 @@ export async function startHttpServer(
     activeRequests.clear();
     activeMcpRequests = 0;
     await Promise.allSettled(requests.map((request) => request.server.close()));
+    await reachGoals?.stopAuthorizedContinuation();
     await reachJobs?.close();
     await services.browser.close();
     await services.existingChrome?.close();
@@ -361,5 +447,5 @@ export async function startHttpServer(
     await new Promise<void>((resolve) => setImmediate(resolve));
   };
 
-  return { httpServer, close };
+  return { httpServer, close, admission };
 }

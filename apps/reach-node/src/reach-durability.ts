@@ -48,13 +48,16 @@ export async function atomicJson(target: string, value: unknown): Promise<void> 
   await syncDirectory(path.dirname(target));
 }
 
-// OS-held reservation: no stale-file deletion and no PID-based lock takeover.
-// A single 15-bit TCP port can collide with a different Reach state directory
-// under parallel tests or on hosts with many nodes. Each new writer publishes
-// an exact canonical-path fingerprint. If a port belongs to a *different new*
-// Reach writer, try another deterministic candidate. A same-path writer, an
-// older/unidentified listener, or a timeout is a hard fail: NEVER risk two
-// writers for one state directory during a mixed-version upgrade.
+// OS-held reservation: a canonical state directory always uses ONE fixed TCP
+// port. A fallback port is unsafe: when a different state releases the first
+// port, a second process can acquire it while the original process still owns
+// the fallback. That creates TWO writers for the same state directory.
+// A port collision with a different state must fail closed, even if it delays
+// concurrent independent nodes. Old v1 processes may still own fallback ports;
+// scan those candidate ports when the primary bind succeeds and refuse a
+// same-state legacy writer instead of silently splitting the ledger.
+// A late start of older v1 code is not protected; upgrades must first stop
+// and disable the old service. See the P0 mixed-version deployment blocker.
 const WRITER_SIGNATURE_PREFIX = "kora-reach-state-writer-v1:";
 function writerPort(canonical: string, candidate: number): number {
   const key = candidate === 0 ? canonical : `${canonical}\0${candidate}`;
@@ -83,14 +86,27 @@ async function identifyStateWriter(port: number): Promise<string | undefined> {
   });
 }
 
+// Typed, non-secret diagnostic for a failed OS reservation. TCP port is
+// observable locally; the canonical workspace path and owner fingerprint are
+// intentionally absent. This is not proof of the OS process/PID owner.
+export class ReachStateWriterReservationError extends Error {
+  readonly code = "REACH_STATE_WRITER_OCCUPIED";
+  constructor(
+    readonly port: number | null,
+    readonly ownerKind: "same_state" | "unidentified" | "foreign_listener" | "candidates_exhausted",
+  ) {
+    // Surface only the loopback port and a classification. No path, PID,
+    // socket signature, credentials or untrusted listener response is logged.
+    super(`Reach state writer reservation is occupied (owner=${ownerKind}, tcp=${port ?? "none"})`);
+    this.name = "ReachStateWriterReservationError";
+  }
+}
+
 export async function acquireStateWriter(directory: string): Promise<Server> {
   const canonical = await realpath(directory);
   const signature = WRITER_SIGNATURE_PREFIX + createHash("sha256").update(canonical).digest("hex");
-  const attempted = new Set<number>();
-  for (let candidate = 0; candidate < 8; candidate++) {
-    const port = writerPort(canonical, candidate);
-    if (attempted.has(port)) continue;
-    attempted.add(port);
+  const port = writerPort(canonical, 0);
+  const tryBind = async (): Promise<Server | undefined> => {
     const server = createServer(socket => socket.end(signature + "\n"));
     try {
       await new Promise<void>((resolve, reject) => {
@@ -100,15 +116,49 @@ export async function acquireStateWriter(directory: string): Promise<Server> {
       server.unref();
       return server;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
-      const owner = await identifyStateWriter(port);
-      if (!owner?.startsWith(WRITER_SIGNATURE_PREFIX) || owner === signature) {
-        throw new Error("Reach state writer reservation is occupied");
-      }
-      // Another *identified* state directory owns this port; continue.
+      if ((error as NodeJS.ErrnoException).code === "EADDRINUSE") return undefined;
+      throw error;
     }
+  };
+  // Reject an already-running older writer for this state when it is on a
+  // fallback port. This scan is an upgrade compatibility guard, NOT a means
+  // to authorize later candidate ports for a new process.
+  const guardLegacyFallbacks = async (held: Server): Promise<void> => {
+    try {
+      const checked = new Set([port]);
+      for (let candidate = 1; candidate < 8; candidate++) {
+        const legacyPort = writerPort(canonical, candidate);
+        if (checked.has(legacyPort)) continue;
+        checked.add(legacyPort);
+        if (await identifyStateWriter(legacyPort) === signature) {
+          throw new ReachStateWriterReservationError(legacyPort, "same_state");
+        }
+      }
+    } catch (error) {
+      await new Promise<void>(resolve => held.close(() => resolve()));
+      throw error;
+    }
+  };
+  let held = await tryBind();
+  if (held) {
+    await guardLegacyFallbacks(held);
+    return held;
   }
-  throw new Error("Reach state writer reservation is occupied");
+  // The first listener may have exited between the bind failure and probe.
+  // Retry only the SAME fixed port; never skip an occupied/unknown owner.
+  let owner = await identifyStateWriter(port);
+  for (const delayMs of [25, 75, 150]) {
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+    held = await tryBind();
+    if (held) {
+      await guardLegacyFallbacks(held);
+      return held;
+    }
+    owner = await identifyStateWriter(port);
+  }
+  const ownerKind = owner === signature ? "same_state"
+    : owner === undefined || owner === "" ? "unidentified" : "foreign_listener";
+  throw new ReachStateWriterReservationError(port, ownerKind);
 }
 
 export const runnerResultSchema = z.object({

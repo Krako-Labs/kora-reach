@@ -33,9 +33,9 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Root CLI syntax and tests
         run: npm run check
-      - name: MCP typecheck, Swift compilation, integration tests
+      - name: MCP typecheck, Swift compilation, integration tests (isolated workers)
         working-directory: apps/reach-node
-        run: npm run check
+        run: npm run check:ci
       - name: Validate root CLI packaging
         run: npm pack --dry-run --json > /dev/null
       - name: Enforce no fixture GUI on shared CI workers

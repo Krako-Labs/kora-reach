@@ -237,6 +237,42 @@ export class ReachJobManager {
     return { ...this.#publicJob(job), output: await this.#readLog(id) };
   }
 
+  // Persistent Goal observation needs only runner outcome metadata, not the
+  // job's stdout/stderr log. A corrupt or missing log must not change a
+  // separately verified terminal outcome or expose log content to the observer.
+  async goalOutcome(id: string): Promise<Pick<ReachJob, "id" | "runId" | "status" | "recovery" | "exitCode" | "endedAt">> {
+    await this.#operations;
+    const job = this.#require(id);
+    return {
+      id: job.id, runId: job.runId, status: job.status,
+      recovery: job.recovery, exitCode: job.exitCode, endedAt: job.endedAt,
+    };
+  }
+
+  // Bind an existing effect to its original authorized workspace, without execution.
+  async goalBinding(id: string, workspace: string): Promise<{ jobId: string; runId: string }> {
+    await this.#operations;
+    this.#fileService.policy?.path(workspace);
+    const canonical = await realpath(workspace);
+    const job = this.#require(id);
+    if (job.cwd !== canonical || !job.runId || !job.controlKey) {
+      throw new Error("Goal requires an existing job with matching authorized workspace and runner identity");
+    }
+    return { jobId: job.id, runId: job.runId };
+  }
+
+  // A Goal acceptance file is always a single basename inside the original
+  // authorized job workspace. Recheck current policy on every status query.
+  async goalEvidenceFile(id: string, workspace: string, fileName: string): Promise<string> {
+    await this.goalBinding(id, workspace);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(fileName)) {
+      throw new Error("Goal evidence requires a single safe filename");
+    }
+    const target = path.join(workspace, fileName);
+    this.#fileService.policy?.path(target);
+    return target;
+  }
+
   diagnostics(id: string) {
     return this.#exclusive(async () => {
       const job = this.#require(id);

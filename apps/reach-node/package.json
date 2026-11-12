@@ -13,10 +13,12 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
     "test": "vitest run",
+    "test:ci": "vitest run --maxWorkers=1",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check:macos-ui": "node scripts/check-macos-ui-contract.mjs",
-    "check": "npm run typecheck && npm run build && npm test"
+    "check": "npm run typecheck && npm run build && npm test",
+    "check:ci": "npm run typecheck && npm run build && npm run test:ci"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",

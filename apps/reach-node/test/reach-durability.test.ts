@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:http";
+import { createServer as createTcpServer } from "node:net";
 import { mkdtemp, mkdir, readFile, realpath, writeFile, rm, rename, stat, symlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { createServices } from "../src/mcp-server.js";
 import { ReachJobManager } from "../src/reach-job-manager.js";
-import { acquireStateWriter, readResult, runnerRequest, inspectRunner } from "../src/reach-durability.js";
+import { acquireStateWriter, readResult, runnerRequest, inspectRunner, ReachStateWriterReservationError } from "../src/reach-durability.js";
 
 const roots: string[] = [];
 const managers = new Set<ReachJobManager>();
@@ -51,7 +52,7 @@ afterEach(async () => {
 });
 
 describe("durable writer allocation under port collisions", () => {
-  it("does not confuse distinct states with a shared first TCP port", async () => {
+  it("fails closed on distinct state directories sharing a primary TCP port, including owner churn", async () => {
     const scratch = await mkdtemp(path.join(os.tmpdir(), "reach-writer-collision-"));
     const canonical = await realpath(scratch);
     let first: string | undefined;
@@ -70,12 +71,133 @@ describe("durable writer allocation under port collisions", () => {
       expect(first).toBeDefined(); expect(second).toBeDefined();
       await mkdir(first!); await mkdir(second!);
       a = await acquireStateWriter(first!);
+      // If the second directory uses a fallback port, its first port can
+      // become free later. A second process can then open the same state on
+      // that first port: TWO writers, each believing it is exclusive.
+      const unsafeFallback = await acquireStateWriter(second!).catch(() => undefined);
+      if (unsafeFallback) {
+        await new Promise<void>(resolve => a!.close(() => resolve()));
+        a = undefined;
+        const duplicate = await acquireStateWriter(second!).catch(() => undefined);
+        if (duplicate) {
+          await new Promise<void>(resolve => duplicate.close(() => resolve()));
+        }
+        await new Promise<void>(resolve => unsafeFallback.close(() => resolve()));
+        throw new Error(`Unsafe writer fallback: same-state second reservation ${duplicate ? "succeeded" : "not acquired"}`);
+      }
+      await new Promise<void>(resolve => a!.close(() => resolve()));
+      a = undefined;
       b = await acquireStateWriter(second!);
-      expect(a.address()).not.toEqual(b.address());
-      await expect(acquireStateWriter(second!)).rejects.toThrow("reservation is occupied");
+      await expect(acquireStateWriter(second!)).rejects.toMatchObject({
+        code: "REACH_STATE_WRITER_OCCUPIED", ownerKind: "same_state",
+      });
     } finally {
       if (b) await new Promise<void>(resolve => b!.close(() => resolve()));
       if (a) await new Promise<void>(resolve => a!.close(() => resolve()));
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a pre-existing same-state v1 fallback owner after the primary port is freed", async () => {
+    const scratch = await mkdtemp(path.join(os.tmpdir(), "reach-writer-legacy-fallback-"));
+    const canonical = await realpath(scratch);
+    const primaryPort = 10000 + createHash("sha256").update(canonical).digest().readUInt32BE(0) % 20000;
+    const fallbackPort = 10000 + createHash("sha256").update(`${canonical}\0${1}`).digest().readUInt32BE(0) % 20000;
+    const signature = "kora-reach-state-writer-v1:" + createHash("sha256").update(canonical).digest("hex");
+    const legacy = createTcpServer(socket => socket.end(signature + "\n"));
+    let acquired: Awaited<ReturnType<typeof acquireStateWriter>> | undefined;
+    try {
+      expect(fallbackPort).not.toBe(primaryPort);
+      await new Promise<void>((resolve, reject) => {
+        legacy.once("error", reject);
+        legacy.listen(fallbackPort, "127.0.0.1", resolve);
+      });
+      await expect(acquireStateWriter(scratch)).rejects.toMatchObject({
+        code: "REACH_STATE_WRITER_OCCUPIED", ownerKind: "same_state", port: fallbackPort,
+      });
+      await new Promise<void>(resolve => legacy.close(() => resolve()));
+      // The rejected primary reservation must have closed cleanly.
+      acquired = await acquireStateWriter(scratch);
+      expect(acquired.address()).toMatchObject({ port: primaryPort });
+    } finally {
+      if (acquired) await new Promise<void>(resolve => acquired!.close(() => resolve()));
+      if (legacy.listening) await new Promise<void>(resolve => legacy.close(() => resolve()));
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let an unrelated service on a v1 fallback port block the new fixed-port writer", async () => {
+    const scratch = await mkdtemp(path.join(os.tmpdir(), "reach-writer-foreign-fallback-"));
+    const canonical = await realpath(scratch);
+    const primary = 10000 + createHash("sha256").update(canonical).digest().readUInt32BE(0) % 20000;
+    const foreignPort = 10000 + createHash("sha256").update(`${canonical}\0${3}`).digest().readUInt32BE(0) % 20000;
+    const foreign = createTcpServer(socket => socket.end("unrelated-service\n"));
+    let held: Awaited<ReturnType<typeof acquireStateWriter>> | undefined;
+    try {
+      expect(foreignPort).not.toBe(primary);
+      await new Promise<void>((resolve, reject) => {
+        foreign.once("error", reject);
+        foreign.listen(foreignPort, "127.0.0.1", resolve);
+      });
+      // The previous attempt to hold every legacy candidate port prevented
+      // unrelated active services (verified against a real cloudflared port).
+      // Only a same-state legacy v1 signature should block the primary writer.
+      held = await acquireStateWriter(scratch);
+      expect(held.address()).toMatchObject({ port: primary });
+    } finally {
+      if (held) await new Promise<void>(resolve => held!.close(() => resolve()));
+      if (foreign.listening) await new Promise<void>(resolve => foreign.close(() => resolve()));
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("reacquires the same port after an unidentified temporary owner exits", async () => {
+    const scratch = await mkdtemp(path.join(os.tmpdir(), "reach-writer-transient-"));
+    const canonical = await realpath(scratch);
+    const port = 10000 + createHash("sha256").update(canonical).digest().readUInt32BE(0) % 20000;
+    const transient = createTcpServer(socket => {
+      // Force the first bind to observe EADDRINUSE. Identification may return
+      // empty because this unrelated listener closes without a Reach signature.
+      socket.end();
+      // Let the first retry encounter a real occupied port. The next bounded
+      // retry can only succeed after the unrelated listener has exited.
+      setTimeout(() => transient.close(), 65);
+    });
+    let acquired: Awaited<ReturnType<typeof acquireStateWriter>> | undefined;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        transient.once("error", reject);
+        transient.listen(port, "127.0.0.1", resolve);
+      });
+      acquired = await acquireStateWriter(scratch);
+      expect(acquired.address()).toMatchObject({ port });
+      await expect(acquireStateWriter(scratch)).rejects.toMatchObject({
+        code: "REACH_STATE_WRITER_OCCUPIED", ownerKind: "same_state", port,
+      });
+    } finally {
+      if (acquired) await new Promise<void>(resolve => acquired!.close(() => resolve()));
+      if (transient.listening) await new Promise<void>(resolve => transient.close(() => resolve()));
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed on a forged or incomplete Reach writer identity", async () => {
+    const scratch = await mkdtemp(path.join(os.tmpdir(), "reach-writer-invalid-signature-"));
+    const canonical = await realpath(scratch);
+    const port = 10000 + createHash("sha256").update(canonical).digest().readUInt32BE(0) % 20000;
+    // A prefix alone is not proof of another writer's canonical directory.
+    // Skipping this occupied port can bypass an older/same-state writer.
+    const impostor = createTcpServer(socket => socket.end("kora-reach-state-writer-v1:not-a-sha256\n"));
+    try {
+      await new Promise<void>((resolve, reject) => {
+        impostor.once("error", reject);
+        impostor.listen(port, "127.0.0.1", resolve);
+      });
+      await expect(acquireStateWriter(scratch)).rejects.toMatchObject({
+        code: "REACH_STATE_WRITER_OCCUPIED", ownerKind: "foreign_listener", port,
+      });
+    } finally {
+      await new Promise<void>(resolve => impostor.close(() => resolve()));
       await rm(scratch, { recursive: true, force: true });
     }
   });
@@ -90,7 +212,9 @@ describe("durable writer allocation under port collisions", () => {
         legacy.once("error", reject);
         legacy.listen(port, "127.0.0.1", resolve);
       });
-      await expect(acquireStateWriter(scratch)).rejects.toThrow("reservation is occupied");
+      await expect(acquireStateWriter(scratch)).rejects.toMatchObject({
+        code: "REACH_STATE_WRITER_OCCUPIED", ownerKind: "unidentified", port,
+      });
     } finally {
       await new Promise<void>(resolve => legacy.close(() => resolve()));
       await rm(scratch, { recursive: true, force: true });

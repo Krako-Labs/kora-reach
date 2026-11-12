@@ -18,6 +18,7 @@ import { registerKoraTools } from "./kora-tools.js";
 import { registerLiveScreen } from "./live-screen-tools.js";
 import { registerBackgroundComputerTools } from "./background-computer-tools.js";
 import { registerReachPreflight } from "./reach-preflight.js";
+import { registerReachGoalTools } from "./reach-goal-tools.js";
 import type { ReachNodeIdentity } from "./reach-node-registry.js";
 import { REACH_NODE_PACKAGE_VERSION } from "./runtime-versions.js";
 
@@ -26,6 +27,7 @@ export interface McpServices {
   fileService: FileService;
   browser: BrowserPort;
   repairJobs?: import("./reach-job-manager.js").ReachJobManager;
+  goals?: import("./reach-goals.js").ReachGoalStore;
   nodeIdentity?: ReachNodeIdentity;
   existingChrome?: BrowserPort;
   computer: ComputerPort;
@@ -69,6 +71,7 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
   );
 
   registerReachPreflight(server, config, services);
+  if (services.goals) registerReachGoalTools(server, services.goals);
   registerExecTools(
     server,
     config,

@@ -293,6 +293,7 @@ describe("remote development MCP server", () => {
     expect(await healthResponse.json()).toMatchObject({
       status: "ok",
       transportMode: "stateless-json",
+      runtimeBuild: { status: "unavailable", verified: false },
       activeMcpSessions: 0,
       activeMcpRequests: 0,
     });
