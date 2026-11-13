@@ -1,208 +1,221 @@
-# KORA Reach
+<p align="center">
+  <img src="assets/readme-hero.webp" alt="KORA Reach: Use the AI Plan and Computers You Already Have. Connect your computers, automate everyday work, and use frontier AI when it matters. Powered by KORA Core. Local Execution, Persistent Goals, Verified Results." width="100%" />
+</p>
 
-**AI automation without token anxiety.**
+<p align="center"><strong>Use the AI Plan and Computers You Already Have.</strong></p>
 
-Use the AI plan and computer you already pay for. KORA keeps routine work local and calls frontier AI only when intelligence is actually needed.
+<p align="center">Connect your computers, automate everyday work, and use frontier AI when it matters.</p>
 
-**ChatGPT-first Mac control is available on `main` as an MCP preview.** It includes
-an authenticated computer node, durable background jobs, browser and macOS tools,
-a Reach Console, and an experimental in-chat live-screen viewer. This is not yet
-the tagged stable release. See
-[ChatGPT-first MCP development and setup](docs/CHATGPT_FIRST_MCP.md).
+<p align="center">
+  <img src="https://img.shields.io/badge/Local%20execution-on%20your%20computer-00BDE8?style=for-the-badge" alt="Local execution on your computer" />
+  <img src="https://img.shields.io/badge/Connected%20Macs-MCP%20preview-367BFA?style=for-the-badge" alt="Connected Macs: MCP preview" />
+  <img src="https://img.shields.io/badge/Persistent%20Goals-PR%20preview-A15CFA?style=for-the-badge" alt="Persistent Goals: PR preview" />
+  <img src="https://img.shields.io/badge/Verified%20results-evidence%20first-18AD83?style=for-the-badge" alt="Verified results: evidence first" />
+  <img src="https://img.shields.io/badge/KORA%20Core-routing%20direction-F39B3D?style=for-the-badge" alt="KORA Core: routing direction" />
+</p>
 
-Resumable browser/native control and optional coding repair are being verified
-in [draft PR #3](https://github.com/Krako-Labs/kora-reach/pull/3). They are not yet
-part of `main`. Experimental pointer control remains disabled by default.
+<p align="center">
+  <a href="https://github.com/Krako-Labs/kora-reach/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/CLI-v0.1.0-092A51?style=flat-square" alt="CLI release v0.1.0" /></a>
+  <img src="https://img.shields.io/badge/Node.js-22.12%2B-388E3C?style=flat-square" alt="Node.js 22.12+" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-F25A53?style=flat-square" alt="Apache-2.0 license" /></a>
+  <a href="https://github.com/Krako-Labs/kora-reach/pull/3"><img src="https://img.shields.io/badge/Mac%20control-Draft%20PR%20%233-754FE4?style=flat-square" alt="Mac control: Draft PR #3" /></a>
+  <img src="https://img.shields.io/badge/Docker-not%20required-17B7C7?style=flat-square" alt="No Docker required" />
+</p>
 
-The v0.1 stable release below remains a standalone CLI.
+<br />
 
-For the MCP preview, clone `main` and run the Phase A Mac setup:
+**Your existing computers do more of the work.** KORA Reach starts with local commands, tests, file operations, and reusable results. A frontier coding agent is optional for tasks that need reasoning. It verifies outcomes instead of declaring success after a tool call.
 
-    git clone --branch main https://github.com/Krako-Labs/kora-reach.git
-    cd kora-reach
-    node scripts/setup-mac.mjs
+**KORA Core** provides the local-first routing direction for Reach. The complete KORA Core runtime and automatic multi-device scheduling are still under development. **AI plan usage limits are not removed or bypassed.**
 
-The installer configures a local service and restricted workspace, but does not expose the Mac online. ChatGPT connection still requires secure HTTPS or Tunnel and explicit approval. See [Phase A installation](docs/PHASE_A_INSTALL.md).
+**Release boundary:** [v0.1.0](https://github.com/Krako-Labs/kora-reach/releases/tag/v0.1.0) is the published **CLI**. Authenticated ChatGPT/Mac control is a separate MCP preview; resumable computer control and Persistent Goals are being reviewed in [Draft PR #3](https://github.com/Krako-Labs/kora-reach/pull/3). These preview features are not part of the stable CLI release.
 
+## Contents
 
-    kora reach "Fix the failing tests in this repo"
-
-KORA Reach is a small, CLI-first local agent. It does not send every step to a model.
-
-![KORA Reach coding demo](demo/kora-reach-demo.gif)
-
-The demo above is a condensed replay of a real end-to-end run on MSM2-1: local test failure, one Codex escalation, patch, and independent local verification.
-
-Example result:
-
-    Task completed ✓
-
-    Total KORA actions             6
-    Local operations               2
-    Deterministic routing          3
-    Cached / reused                0
-    Frontier escalations           1
-
-    83% handled without frontier-model escalation
-
-**Important:** a frontier escalation is one handoff from KORA to the frontier agent runtime. Codex may perform multiple internal model turns during that handoff. KORA does not pretend this number is a raw provider API-call count.
-
-## Find what you need
-
-- [Quick start](#quick-start) — install the standalone CLI.
-- [Mac setup](docs/PHASE_A_INSTALL.md) — install the ChatGPT MCP preview.
-- [Three demos](#three-things-v0-does) — coding, files, and continuing until tests pass.
-- [Safety](#safety) — execution and model-use boundaries.
-- [Contributing](#contributing) — replace routine inference with local work.
+- [Quick start](#quick-start) — run locally before configuring any model
+- [Real demo and execution evidence](#real-demo-and-execution-evidence) — see what one completed task actually measured
+- [Three tasks to try](#three-tasks-to-try) — coding, file organization, bounded repair
+- [How Reach works](#how-reach-works) — architecture image, KORA Core direction, and actual release scope
+- [ChatGPT and Mac control](#chatgpt-and-mac-control) — setup, preview features, and access boundaries
+- [Safety and limitations](#safety-and-limitations) — permissions, provider limits, and unverified claims
+- [Contributing](#contributing) — help turn routine inference into verified local execution
+- [Technical reference](#technical-reference) — detailed setup, implementation, and release notes
 
 <br />
 
 ## Quick start
 
-Requirements:
+Requires **Node.js 22.12+** and Git. No API key or model download is needed for the doctor and local-only path.
 
-- Node.js 22.12 or newer
-- Git
-- Optional for tasks that need frontier reasoning: the official OpenAI Codex CLI, signed in with your ChatGPT account
+**1. Install the published CLI.**
 
-Install from GitHub:
+```bash
+npm install -g https://github.com/Krako-Labs/kora-reach.git
+```
 
-    npm install -g https://github.com/Krako-Labs/kora-reach.git
+**2. Check your environment.**
 
-For ChatGPT-plan-backed coding escalation:
+```bash
+kora doctor
+```
 
-    npm install -g @openai/codex
-    codex
+**3. Run a local-only task in a project that already has tests.**
 
-Follow the official ChatGPT sign-in flow. Then:
+```bash
+cd /path/to/your-project
+kora reach "Fix the failing tests in this repo" --frontier none
+```
 
-    cd your-project
-    kora reach "Fix the failing tests in this repo"
+Reach detects and runs the project's tests. If they fail, local-only mode reports the failure instead of silently calling a model.
 
-No OpenAI API key is required for the Codex and ChatGPT-plan path. OpenAI plan usage and limits still apply.
+<details>
+<summary><strong>Optional: enable coding repair with Codex</strong></summary>
 
-## Three things v0 does
+Install the separately provided [official Codex CLI](https://github.com/openai/codex) and complete its supported ChatGPT sign-in:
 
-### 1. Coding
+```bash
+npm install -g @openai/codex
+codex
+```
 
-    kora reach "Fix the failing tests in this repo"
+Then, in a repository where you allow source edits:
 
-KORA:
+```bash
+kora reach "Fix the failing tests in this repo"
+```
 
-1. detects the repository test command;
-2. runs it locally;
-3. stops with zero frontier escalation if tests already pass;
-4. if tests fail, escalates to Codex in a workspace-write sandbox;
-5. reruns the tests locally itself;
-6. repeats only if verification still fails.
+This uses applicable Codex/ChatGPT plan allowances and limits. It is **not** an unlimited subscription-to-API gateway.
 
-Supported test detection in v0: npm, pnpm, bun, pytest, Cargo, and Go.
+</details>
 
-### 2. File automation
+<br />
 
-    cd ~/Downloads/some-folder
-    kora reach "Organize this folder and identify duplicate files"
+## Real demo and execution evidence
 
-Hashing and duplicate detection are local. KORA never deletes duplicates.
+![KORA Reach terminal demo: a failing test is repaired and verified locally.](demo/kora-reach-demo.gif)
 
-For safety, v0 will not reorganize files when the target directory is a Git repository. In ordinary folders it groups top-level files into Images, Video, Audio, Documents, Archives, Data, Code, and Other.
+*A condensed recording of one actual end-to-end coding task on MSM2-1, not a benchmark of typical savings.*
 
-### 3. Long-running repair
+```text
+Task completed ✓
 
-    kora reach "Keep working on this project until the tests pass" --max-rounds 3
+Total KORA actions             6
+Local operations               2
+Deterministic routing          3
+Cached / reused                0
+Frontier escalations           1
 
-The loop is:
+83% handled without frontier-model escalation
+```
 
-    run tests locally
-      |
-      +-- pass -> done
-      |
-      +-- fail -> frontier escalation
-                    |
-                    +-> run tests locally again
-                           |
-                           +-> repeat only if still failing
+**What this proves:** Reach completed that task and independently reran the tests. An *escalation* is a handoff to an AI coding agent, **not** a count of underlying model API requests or tokens. The 83% figure describes this recorded task only; it is not a general cost or performance guarantee.
 
-## Why this is KORA
+<br />
 
-The product rule is simple:
+## Three tasks to try
 
-**Inference only when necessary.**
+| Task | Command | What Reach does |
+|---|---|---|
+| **Fix failing tests** | `kora reach "Fix the failing tests in this repo"` | Run tests locally, use optional Codex when necessary, verify again |
+| **Organize a folder** | `kora reach "Organize this folder and identify duplicates"` | Group top-level files and report hashes/duplicates locally |
+| **Bounded repair loop** | `kora reach "Keep working until the tests pass" --max-rounds 3` | Repeat test → optional repair → verification, with a fixed limit |
 
-KORA Reach routes work into four buckets:
+Run file organization on a **disposable copy** first. It may move files into category folders, but does not delete duplicates. It refuses organization moves inside Git repositories. Supported test detection includes npm, pnpm, bun, pytest, Cargo, and Go.
 
-- **local operations** - shell, filesystem, hashing, tests;
-- **deterministic routing** - known task recognition, test discovery, safety gates;
-- **cached / reused** - for example reusable file hashes;
-- **frontier escalation** - reasoning delegated only when deterministic work cannot finish the task.
+<br />
 
-The execution report is part of the product, not debug output.
+## How Reach works
 
-## ChatGPT plan support
+![KORA Reach architecture: a ChatGPT or CLI request enters an authorized Reach Node, uses local tools or approved browser and Mac access, follows KORA Core local-first routing principles, and returns independently verified evidence. Persistent Goals and multi-Mac control are marked as previews.](assets/kora-reach-architecture.png)
 
-As of September 2026, OpenAI officially documents two relevant paths:
+*Architecture overview of the released CLI and the authenticated Mac-control development preview. The complete KORA Core integration and automatic cross-device orchestration are not yet released.*
 
-1. Codex CLI can be signed in with ChatGPT and uses the user applicable ChatGPT and Codex allowance.
-2. Sign in with ChatGPT supports open-source and local apps using eligible ChatGPT plan usage for eligible Responses API requests with explicit user authorization.
+**KORA Reach executes. KORA Core guides what should run locally and when model reasoning is worth using.**
 
-KORA Reach v0 chooses the first path because Codex is already a working coding-agent runtime and gets the product public faster. Direct Sign in with ChatGPT is a natural follow-up only if users pull for it.
+| Part | What it does |
+|---|---|
+| **Your request** | Start from the CLI or an authenticated ChatGPT MCP connection |
+| **Reach Node** | Check permissions, select an approved Mac, and run local commands or computer tools |
+| **KORA Core principles** | Prefer deterministic execution, reuse valid results, and use frontier reasoning selectively |
+| **Local execution** | Work with files, repositories, browser tabs, and approved macOS interfaces |
+| **Verification** | Check tests and file outputs; keep bounded job evidence and, in the PR preview, durable Goal status |
 
-KORA Reach does not claim unlimited usage, bypass provider limits, call private ChatGPT backend APIs, or expose a generic subscription-to-API proxy.
+Each Mac maintains its own Reach Node and access rules. **Connecting several Macs is not the same as automatic distributed scheduling.** The latter remains in development.
 
-See docs/RESEARCH.md for official references and the launch decision.
+Execution statistics show **local operations, deterministic routes, reused work, and frontier-agent handoffs**. A handoff is not a raw provider API-call count.
 
-## Local-only behavior
+<br />
 
-The file demo needs no model.
+## ChatGPT and Mac control
 
-You can also force coding verification to remain local:
+The [MCP preview on `main`](docs/CHATGPT_FIRST_MCP.md) connects ChatGPT to a **user-owned Mac** through an authenticated Reach Node. It offers files, commands, browser and native Mac tools, plus a local Reach Console. The experimental live-screen viewer depends on the connected ChatGPT host.
 
-    kora reach "Fix the failing tests in this repo" --frontier none
+For Mac setup and permission boundaries, follow [Phase A installation](docs/PHASE_A_INSTALL.md):
 
-If tests fail, KORA stops rather than silently invoking a provider.
+```bash
+git clone --branch main https://github.com/Krako-Labs/kora-reach.git
+cd kora-reach
+node scripts/setup-mac.mjs
+```
 
-## Safety
+The installer creates a restricted local service. It does **not** expose your Mac to the internet or silently approve macOS Accessibility or Screen Recording. ChatGPT connection requires a properly authenticated HTTPS MCP endpoint or a supported secure tunnel.
 
-KORA Reach executes local work. v0 deliberately keeps the boundary narrow:
+### Persistent Goals — development preview
 
-- work is scoped to the current directory or --cwd;
-- duplicate files are reported, never deleted;
-- Git repositories are protected from file-organization moves;
-- frontier coding runs through Codex workspace-write, not unrestricted host access;
-- KORA tells the frontier agent not to commit or push;
-- KORA stores no provider tokens and logs no credentials.
+[Draft PR #3](https://github.com/Krako-Labs/kora-reach/pull/3) adds work-in-progress capabilities for verified computer control and durable local goals:
 
-Review changes before committing them.
+- Bind an **already authorized** detached local job to a Goal ID.
+- Query its status from a new authenticated session after a Node restart.
+- Independently check an expected file SHA-256 and store a write-once historical verification receipt.
+- Optionally continue **evidence observation** after chat disconnect, without restarting an uncertain action.
 
-## Doctor
+**Not yet supported as a general product claim:** arbitrary multi-step autonomous planning, automatic Chrome-account migration, unrestricted macOS GUI operation, or guaranteed Reach selection in every ChatGPT conversation.
 
-    kora doctor
+These capabilities have passed local and isolated-Mac tests, but are not a certified stable release. See [verified control QC and open gates](docs/VERIFIED_CONTROL_QC.md).
 
-This checks Node, Git, and optional Codex availability.
+<br />
 
-## Development
+## Safety and limitations
 
-    git clone https://github.com/Krako-Labs/kora-reach.git
-    cd kora-reach
-    npm test
-    npm run check
+- **Explicit scope:** local commands and file access follow the configured workspace policy. An approved tool is not permission to bypass another tool's access restriction.
+- **Computer control:** macOS Accessibility, Screen Recording, website sign-in, and an unlocked GUI session may still require user action. Safe background work can continue while GUI tasks wait.
+- **Side effects:** uncertain clicks, downloads, and submissions must be reconciled before retrying. Duplicate files are reported, not deleted.
+- **Models:** optional Codex is installed separately. An AI subscription does not imply unlimited frontier requests or override provider usage limits, policies, or licensing.
+- **Verification:** passing unit tests or a local GUI fixture does not establish production readiness, deployment parity, or real-user completion rates.
+- **Privacy:** CLI execution is local-first. Connecting a Mac through MCP introduces a separate authenticated remote-control surface that you must configure and secure.
 
-The core has zero runtime npm dependencies.
+KORA Reach is **not** a hosted SaaS, a generic subscription proxy, or a promise of unlimited model usage.
 
-## What v0 intentionally does not include
-
-No macOS UI. No dashboard. No hosted account system. No billing. No generalized plugin framework. No enterprise console. No multi-agent architecture.
-
-Those are not launch blockers.
+<br />
 
 ## Contributing
 
-The best first contributions are new deterministic handlers that replace an obvious class of unnecessary inference, plus tests proving the behavior.
+**The best contributions remove avoidable model work without reducing correctness or safety.** Useful additions include deterministic handlers, reproducible access failures, browser/profile compatibility tests, and verifiable completion criteria.
 
-See CONTRIBUTING.md.
+- [Report an issue or contribute a failing scenario](https://github.com/Krako-Labs/kora-reach/issues)
+- [Read the contribution guide](CONTRIBUTING.md)
+- [See the open MCP preview PR](https://github.com/Krako-Labs/kora-reach/pull/3)
 
-## License
+[**KORA Doctor**](https://github.com/Krako-Labs/kora-doctor) diagnoses possible inference waste in execution traces. **KORA Reach** avoids unnecessary inference during execution. Both are independent open-source projects.
 
-Apache-2.0. See LICENSE.
+**License:** [Apache-2.0](LICENSE) for the core CLI. The separate MCP Node package is MIT-licensed; optional tools have their own licenses. **Maintained by:** [Krako Labs](https://github.com/Krako-Labs).
 
-The optional OpenAI Codex CLI is installed separately and has its own project and license.
+<br />
+
+## Technical reference
+
+- [Mac MCP architecture and setup](docs/CHATGPT_FIRST_MCP.md)
+- [Local Mac installation](docs/PHASE_A_INSTALL.md)
+- [Verified control and GUI QC evidence](docs/VERIFIED_CONTROL_QC.md)
+- [Safe update staging and limitations](docs/P1_SAFE_NODE_UPDATE.md)
+- [Research and provider access boundaries](docs/RESEARCH.md)
+- [Release notes for CLI v0.1.0](docs/RELEASE_NOTES_v0.1.0.md)
+
+The core CLI has no runtime npm dependencies. To run development checks:
+
+```bash
+npm run check
+cd apps/reach-node
+npm ci
+npm run check:ci
+```
