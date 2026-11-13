@@ -2,7 +2,13 @@
 
 KORA Reach can save a UI step, try existing browser and native controls, verify its result, and resume authorized work after the chat disconnects. Optional coding repair reuses the official Codex CLI only after local tests fail.
 
-This change is a **draft release candidate**. Pointer-event fallback is disabled by default. It has not passed final live-window QC.
+**Document scope:** historical engineering verification notes for the
+experimental Mac-control source included with KORA Reach v0.2.0. This is **not
+a production Mac-control certification**. The dated sections below describe
+conditions observed at those times; old CI and deployment status statements
+must not be treated as current results. Pointer-event fallback remains off
+by default. Live installed-version parity, first-use ChatGPT connector behavior
+and broad real-user GUI compatibility remain separate release gates.
 
 - [What changed](#what-changed) — the user-facing execution path.
 - [Verification](#verification) — automated and actual Mac results.
