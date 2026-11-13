@@ -9,16 +9,16 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Local%20execution-on%20your%20computer-00BDE8?style=for-the-badge" alt="Local execution on your computer" />
   <img src="https://img.shields.io/badge/Connected%20Macs-MCP%20preview-367BFA?style=for-the-badge" alt="Connected Macs: MCP preview" />
-  <img src="https://img.shields.io/badge/Persistent%20Goals-PR%20preview-A15CFA?style=for-the-badge" alt="Persistent Goals: PR preview" />
+  <img src="https://img.shields.io/badge/Persistent%20Goals-development%20preview-A15CFA?style=for-the-badge" alt="Persistent Goals: development preview" />
   <img src="https://img.shields.io/badge/Verified%20results-evidence%20first-18AD83?style=for-the-badge" alt="Verified results: evidence first" />
   <img src="https://img.shields.io/badge/KORA%20Core-routing%20direction-F39B3D?style=for-the-badge" alt="KORA Core: routing direction" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/Krako-Labs/kora-reach/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/CLI-v0.1.0-092A51?style=flat-square" alt="CLI release v0.1.0" /></a>
+  <a href="https://github.com/Krako-Labs/kora-reach/releases/tag/v0.2.0"><img src="https://img.shields.io/badge/CLI-v0.2.0-092A51?style=flat-square" alt="CLI release v0.2.0" /></a>
   <img src="https://img.shields.io/badge/Node.js-22.12%2B-388E3C?style=flat-square" alt="Node.js 22.12+" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-F25A53?style=flat-square" alt="Apache-2.0 license" /></a>
-  <a href="https://github.com/Krako-Labs/kora-reach/pull/3"><img src="https://img.shields.io/badge/Mac%20control-Draft%20PR%20%233-754FE4?style=flat-square" alt="Mac control: Draft PR #3" /></a>
+  <a href="https://github.com/Krako-Labs/kora-reach/pull/3"><img src="https://img.shields.io/badge/Mac%20control-source%20preview-754FE4?style=flat-square" alt="Mac control: source preview" /></a>
   <img src="https://img.shields.io/badge/Docker-not%20required-17B7C7?style=flat-square" alt="No Docker required" />
 </p>
 
@@ -26,9 +26,9 @@
 
 **Your existing computers do more of the work.** KORA Reach starts with local commands, tests, file operations, and reusable results. A frontier coding agent is optional for tasks that need reasoning. It verifies outcomes instead of declaring success after a tool call.
 
-**KORA Core** provides the local-first routing direction for Reach. The complete KORA Core runtime and automatic multi-device scheduling are still under development. **AI plan usage limits are not removed or bypassed.**
+**KORA Core** provides the local-first routing principles for Reach. The complete KORA Core runtime and automatic multi-device scheduling are still under development. **AI plan usage limits are not removed or bypassed.**
 
-**Release boundary:** [v0.1.0](https://github.com/Krako-Labs/kora-reach/releases/tag/v0.1.0) is the published **CLI**. Authenticated ChatGPT/Mac control is a separate MCP preview; resumable computer control and Persistent Goals are being reviewed in [Draft PR #3](https://github.com/Krako-Labs/kora-reach/pull/3). These preview features are not part of the stable CLI release.
+**Release boundary:** [v0.2.0](https://github.com/Krako-Labs/kora-reach/releases/tag/v0.2.0) includes the stable **CLI** and source for an **experimental authenticated Mac-control MCP node**, including limited Persistent Goals. Mac control requires separate setup and permissions; it is **not** a fully autonomous or production-certified desktop agent.
 
 ## Contents
 
@@ -160,9 +160,9 @@ node scripts/setup-mac.mjs
 
 The installer creates a restricted local service. It does **not** expose your Mac to the internet or silently approve macOS Accessibility or Screen Recording. ChatGPT connection requires a properly authenticated HTTPS MCP endpoint or a supported secure tunnel.
 
-### Persistent Goals — development preview
+### Persistent Goals — source preview
 
-[Draft PR #3](https://github.com/Krako-Labs/kora-reach/pull/3) adds work-in-progress capabilities for verified computer control and durable local goals:
+The **v0.2.0 source preview** includes experimental computer-control and durable local Goal capabilities:
 
 - Bind an **already authorized** detached local job to a Goal ID.
 - Query its status from a new authenticated session after a Node restart.
@@ -171,7 +171,7 @@ The installer creates a restricted local service. It does **not** expose your Ma
 
 **Not yet supported as a general product claim:** arbitrary multi-step autonomous planning, automatic Chrome-account migration, unrestricted macOS GUI operation, or guaranteed Reach selection in every ChatGPT conversation.
 
-These capabilities have passed local and isolated-Mac tests, but are not a certified stable release. See [verified control QC and open gates](docs/VERIFIED_CONTROL_QC.md).
+These capabilities have passed local and isolated-Mac tests, but are not a certified production Mac-control deployment. See [verified control QC and open gates](docs/VERIFIED_CONTROL_QC.md).
 
 <br />
 
@@ -194,7 +194,7 @@ KORA Reach is **not** a hosted SaaS, a generic subscription proxy, or a promise 
 
 - [Report an issue or contribute a failing scenario](https://github.com/Krako-Labs/kora-reach/issues)
 - [Read the contribution guide](CONTRIBUTING.md)
-- [See the open MCP preview PR](https://github.com/Krako-Labs/kora-reach/pull/3)
+- [Read Mac-control setup](docs/CHATGPT_FIRST_MCP.md)
 
 [**KORA Doctor**](https://github.com/Krako-Labs/kora-doctor) diagnoses possible inference waste in execution traces. **KORA Reach** avoids unnecessary inference during execution. Both are independent open-source projects.
 
@@ -209,7 +209,7 @@ KORA Reach is **not** a hosted SaaS, a generic subscription proxy, or a promise 
 - [Verified control and GUI QC evidence](docs/VERIFIED_CONTROL_QC.md)
 - [Safe update staging and limitations](docs/P1_SAFE_NODE_UPDATE.md)
 - [Research and provider access boundaries](docs/RESEARCH.md)
-- [Release notes for CLI v0.1.0](docs/RELEASE_NOTES_v0.1.0.md)
+- [Release notes for v0.2.0](docs/RELEASE_NOTES_v0.2.0.md)
 
 The core CLI has no runtime npm dependencies. To run development checks:
 

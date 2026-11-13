@@ -1,6 +1,6 @@
 {
   "name": "kora-reach",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI automation without token anxiety. Deterministic-first local agent that escalates only when needed.",
   "type": "module",
   "license": "Apache-2.0",
