@@ -92,18 +92,20 @@ export class PlaywrightBrowserAdapter implements BrowserPort {
       "--no-first-run", "--no-default-browser-check", "about:blank",
     ], { stdio: "ignore", detached: false });
     this.#child.once("exit", () => { this.#child = undefined; void this.#disconnect(); });
-    const deadline = Date.now() + 10_000;
+    // A fresh Chrome profile can initialize slowly on loaded macOS machines.
+    // This is a bounded startup wait, not a retry of a user-visible side effect.
+    const deadline = Date.now() + 30_000;
     let lastError: unknown;
     while (Date.now() < deadline) {
       try {
-        this.#browser = await chromium.connectOverCDP(`http://127.0.0.1:${this.#port}`, { timeout: 750 });
+        this.#browser = await chromium.connectOverCDP(`http://127.0.0.1:${this.#port}`, { timeout: 2_000 });
         this.#browser.on("disconnected", () => void this.#disconnect());
         this.#rebuildTabs();
         return this.status();
       } catch (error) { lastError = error; await new Promise(resolve => setTimeout(resolve, 100)); }
     }
     this.#child?.kill("SIGTERM");
-    throw new ControlError("CDP_UNAVAILABLE", `Managed Chrome did not become ready within 10 seconds: ${lastError instanceof Error ? lastError.message : "unknown error"}`);
+    throw new ControlError("CDP_UNAVAILABLE", `Managed Chrome did not become ready within 30 seconds: ${lastError instanceof Error ? lastError.message : "unknown error"}`);
   }
 
   async #disconnect(): Promise<void> { this.#browser = undefined; this.#tabs.clear(); this.#refs.clear(); this.#dialogs.clear(); }

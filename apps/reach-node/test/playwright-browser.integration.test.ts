@@ -21,7 +21,7 @@ suite.sequential("Playwright managed Chrome adapter", () => {
     const address = server.address(); origin = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
     browser = new PlaywrightBrowserAdapter(root); await browser.start();
     tabId = (await browser.listTabs())[0]!.id; await browser.navigate(tabId, origin);
-  }, 20_000);
+  }, 45_000);
 
   afterAll(async () => {
     await browser?.stop(true).catch(() => undefined);
