@@ -26,7 +26,9 @@ suite.sequential("Playwright managed Chrome adapter", () => {
   afterAll(async () => {
     await browser?.stop(true).catch(() => undefined);
     await new Promise<void>(resolve => server?.close(() => resolve()));
-    await rm(root, { recursive: true, force: true });
+    // Chrome can finish writing disposable profile files just after its owned
+    // child exits. Retry only this test fixture cleanup, with a finite bound.
+    await rm(root, { recursive: true, force: true, maxRetries: 12, retryDelay: 150 });
   });
 
   it("supports snapshots, form actions, popups, dialogs, navigation, and image screenshots", async () => {
