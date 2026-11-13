@@ -1,0 +1,44 @@
+name: Reach Reliability / macOS
+on:
+  pull_request:
+    paths:
+      - 'apps/reach-node/**'
+      - 'bin/**'
+      - 'src/**'
+      - 'test/**'
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/reach-reliability.yml'
+  push:
+    branches: [main, feat/verified-control]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: macOS / Node 22 / deterministic QC
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/reach-node/package-lock.json
+      - name: Install Reach Node dependencies
+        working-directory: apps/reach-node
+        run: npm ci --ignore-scripts
+      - name: Root CLI syntax and tests
+        run: npm run check
+      - name: MCP typecheck, Swift compilation, integration tests (isolated workers)
+        working-directory: apps/reach-node
+        run: npm run check:ci
+      - name: Validate root CLI packaging
+        run: npm pack --dry-run --json > /dev/null
+      - name: Enforce no fixture GUI on shared CI workers
+        run: |
+          test -z "${KORA_UI_QC_HOST:-}"
+          test -z "${KORA_CONTROL_VISUAL_EVENTS:-}"

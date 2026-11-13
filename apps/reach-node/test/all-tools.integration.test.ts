@@ -46,7 +46,7 @@ const CONTROL_TOOLS = [
   "computer_status", "computer_type",
 ] as const;
 
-const ALL_TOOLS = [...CORE_TOOLS, ...CONTROL_TOOLS, "kora_local_task", "computer_live_view", "computer_live_frame", "background_computer_status", "background_app_state", "background_app_action"] as const;
+const ALL_TOOLS = ["reach_preflight", "reach_goal_create", "reach_goal_record_verification", "reach_goal_status", "control_begin", "control_discover", "control_run", "control_frame", "control_status", "control_repair", ...CORE_TOOLS, ...CONTROL_TOOLS, "kora_local_task", "computer_live_view", "computer_live_frame", "background_computer_status", "background_app_state", "background_app_action"] as const;
 
 type ToolName = (typeof ALL_TOOLS)[number];
 type ToolResult = Awaited<ReturnType<Client["callTool"]>>;
@@ -165,6 +165,19 @@ describe.sequential("all registered MCP tools", () => {
     if (localDirectory) {
       await rm(localDirectory, { recursive: true, force: true });
     }
+  });
+
+  it("reports the effective node capability before any local action", async () => {
+    const rpc = await client.callTool({ name: "reach_preflight", arguments: {} });
+    expect(rpc.isError).not.toBe(true);
+    const result = structured(rpc);
+    expect(result).toMatchObject({
+      contractVersion: "reach-preflight/1",
+      macOS: { permissions: "not_probed", unlockedGuiSessionVerified: false },
+      browser: { sessionIdentityVerified: false, requiresTargetCheck: true },
+      runtimeParity: "not_verified",
+    });
+    expect(JSON.stringify(result)).not.toContain("mcp-token");
   });
 
   it("publishes the exact tool inventory and annotations", async () => {

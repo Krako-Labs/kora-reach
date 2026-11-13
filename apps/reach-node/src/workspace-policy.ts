@@ -7,7 +7,12 @@ import type { AppConfig } from "./config.js";
 export type WorkspaceAccessMode = "legacy-unrestricted" | "restricted" | "full";
 
 export class PolicyDenied extends Error {
-  constructor() { super("Operation denied by local workspace policy"); }
+  readonly code = "WORKSPACE_DENIED";
+
+  constructor() {
+    super("Operation denied by local workspace policy");
+    this.name = "PolicyDenied";
+  }
 }
 export function within(root: string, target: string): boolean {
   const relative = path.relative(root, target);

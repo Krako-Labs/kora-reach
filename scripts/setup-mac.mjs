@@ -62,7 +62,8 @@ async function main() {
   const token = randomBytes(48).toString("hex");
   await writeFile(tokenFile, token + "\n", { mode: 0o600, flag: "wx" });
   await writeFile(policyFile, JSON.stringify({
-    version: 2, mode: "restricted", roots: [workspace], allowExecution: true
+    // Workspace roots do not sandbox shell execution. Opt in explicitly after setup.
+    version: 2, mode: "restricted", roots: [workspace], allowExecution: false
   }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
   await writeFile(settings, JSON.stringify({
     version: 1, workspace, state, port, nodeDir, mode: "local-only"

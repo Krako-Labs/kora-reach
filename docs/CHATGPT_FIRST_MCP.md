@@ -1,6 +1,6 @@
 # KORA Reach: ChatGPT-first MCP Mac agent
 
-Status: v0.2 integration branch, not a production release. Existing v0.1 CLI is unchanged.
+Status: included in the **v0.2.0 source release as an experimental Mac-control preview**. The CLI remains independently usable; this is not a certified production desktop agent.
 
 ## What it is
 
@@ -37,30 +37,28 @@ The former project's source was copied, not linked; it is a separate repository.
 Requirements: Node.js 22+, a Mac, terminal access; GUI login and Screen & System
 Audio Recording / Accessibility permissions for screen/computer control.
 
-Run from the root checkout on the feature branch:
+Start with the **v0.2.0 source tag** from an otherwise unused Mac user account, or on a Mac where KORA Reach has not yet been installed:
 
-    git switch feat/chatgpt-mcp-computer-control
-    cd apps/reach-node
-    npm ci
-    npm run check
+    git clone --branch v0.2.0 https://github.com/Krako-Labs/kora-reach.git
+    cd kora-reach
+    node scripts/setup-mac.mjs --dry-run
+    node scripts/setup-mac.mjs
 
-Create a random bearer token in your OWN shell (do not share it in chat):
+The owner-user setup installs pinned dependencies, sets a restricted workspace
+policy (no shell execution by default), generates private local credentials,
+and registers the local-only launchd service. It does **not** silently grant
+macOS Accessibility or Screen Recording, provision a tunnel, or replace an
+existing Reach installation. Review [Phase A installation](PHASE_A_INSTALL.md)
+before connecting ChatGPT.
 
-    export MCP_AUTH_TOKEN="$(openssl rand -hex 32)"
-    export MCP_HOST=127.0.0.1
-    export MCP_PORT=3208
-    export MCP_DEFAULT_CWD="$HOME/Projects"
-    npm start
-
-Local Console: http://127.0.0.1:3208/console
+Local Console (once the service is running): http://127.0.0.1:3208/console
 Local MCP: http://127.0.0.1:3208/mcp
 
-The existing internal KRAKO_REACH_* configuration variable names remain in
-the copied runtime during this pilot. They do not read the old runtime state.
-
-IMPORTANT: the inherited runtime allows OS-user-wide execution without an
-explicit policy. Configure a restricted workspace policy or an explicitly
-approved Full Access policy before network exposure.
+Developers running the Node directly must separately configure authenticating
+bearer/OAuth credentials, the permitted workspace and its explicit execution
+policy. Do not expose a manually started unrestricted local process to the
+internet. The copied runtime retains KRAKO_REACH_* environment variable names;
+these do not connect it to the separate legacy Krako Reach installation.
 
 ## ChatGPT web
 
@@ -87,14 +85,18 @@ Claude remote connectors originate from Anthropic's cloud, not the local Mac.
 
 ## Honest status
 
-All 157 Node-focused tests pass, including simulated repeated screen frames,
-OAuth and durable restart/recovery. Browser start/list/stop worked on MSM2-1.
+At the release candidate, the Node source has macOS Node22 GitHub Actions
+coverage, and isolated local tests include resumable work, OAuth and state
+recovery. Independently, an authorized temporary macOS AppKit window, Save
+sheet and disposable Chrome browser passed interactive GUI QC on MSM2-4. Those
+fixtures do not prove that all real websites, sessions or signed applications
+are supported.
 
-The actual MSM2-1 screenshot command failed with "could not create image from
-display" despite a granted permission preflight. This may require an active
-Mac GUI session or responsible-process TCC fix. Real screen pixels have NOT
-been validated in this pilot, and neither ChatGPT nor Claude has rendered the
-new screen widget in a live conversation.
+A live production rollout, exact deployed Node build/identity parity, full
+first-use ChatGPT connector selection behavior and the interactive screen
+widget in all hosts remain **unverified**. Read the dated
+[verification record](VERIFIED_CONTROL_QC.md) as historical test evidence,
+not as a release certificate.
 
 The MCP SDK currently uses the stable v1.x compatibility line for the
 copied runtime. A later migration to SDK v2 / MCP 2026-07-28 is a separate

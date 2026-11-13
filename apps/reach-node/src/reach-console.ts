@@ -182,6 +182,7 @@ export function reachConsoleApi(
   jobs: ReachJobManager,
   nodes: ReachNodeRegistry,
   sessions: ReachPreviewSessions,
+  goals?: import("./reach-goals.js").ReachGoalStore,
 ): Router {
   const router = express.Router();
   router.use(express.json({ limit: "128kb" }));
@@ -227,6 +228,31 @@ export function reachConsoleApi(
     );
   }));
 
+  if (goals) {
+    router.post("/goals", asyncRoute(async (request, response) => {
+      const body = request.body as { jobId?: unknown; nodeId?: unknown; workspace?: unknown; browserIdentity?: unknown; acceptance?: unknown; autoRecordVerification?: unknown };
+      if (typeof body?.jobId !== "string" || typeof body?.nodeId !== "string" ||
+          typeof body?.workspace !== "string" || (body.browserIdentity !== undefined && body.browserIdentity !== null) ||
+          (body.autoRecordVerification !== undefined && typeof body.autoRecordVerification !== "boolean")) {
+        response.status(400).json({ error: "Goal requires jobId, nodeId and workspace; browser effects not allowed" });
+        return;
+      }
+      response.set("Cache-Control", "private, no-store");
+      response.status(201).json({ goal: await goals.create({
+        jobId: body.jobId, nodeId: body.nodeId, workspace: body.workspace,
+        autoRecordVerification: body.autoRecordVerification as boolean | undefined,
+        acceptance: body.acceptance as { fileName: string; sha256: string } | undefined,
+      }) });
+    }));
+    router.post("/goals/:id/verification", asyncRoute(async (request, response) => {
+      response.set("Cache-Control", "private, no-store");
+      response.json(await goals.recordVerification(routeParam(request.params.id)));
+    }));
+    router.get("/goals/:id", asyncRoute(async (request, response) => {
+      response.set("Cache-Control", "private, no-store");
+      response.json({ goal: await goals.status(routeParam(request.params.id)) });
+    }));
+  }
   router.get("/jobs", (_request, response) => response.json({ jobs: jobs.list() }));
   router.post("/jobs", asyncRoute(async (request, response) => {
     const command = typeof request.body?.command === "string" ? request.body.command : "";

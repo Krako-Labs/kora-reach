@@ -13,17 +13,19 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/src/server.js",
     "test": "vitest run",
+    "test:ci": "vitest run --maxWorkers=1",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check:macos-ui": "node scripts/check-macos-ui-contract.mjs",
-    "check": "npm run typecheck && npm run build && npm test"
+    "check": "npm run typecheck && npm run build && npm test",
+    "check:ci": "npm run typecheck && npm run build && npm run test:ci"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "1.32.1",
     "express": "5.2.1",
     "playwright-core": "1.55.0",
-    "zod": "4.4.3"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/express": "5.0.6",
@@ -31,6 +33,6 @@
     "esbuild": "^0.28.2",
     "tsx": "4.23.12",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   }
 }

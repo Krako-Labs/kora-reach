@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { loadConfig, type AppConfig } from "../src/config.js";
 import { startHttpServer, type RunningHttpServer } from "../src/http-server.js";
+import { ReachJobManager } from "../src/reach-job-manager.js";
 import { createServices } from "../src/mcp-server.js";
 import { freePort } from "./helpers/restart-host.js";
 
@@ -64,7 +65,10 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   release?.(); fault.stage = ""; fault.entered = undefined;
-  await server.close(); await rm(dir, { recursive: true, force: true });
+  // Setup can fail before a new server is assigned. Do not turn the original
+  // writer-reservation failure into a second misleading teardown error.
+  if (server?.httpServer.listening) await server.close();
+  await rm(dir, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
 function stall(stage: string) {
@@ -168,7 +172,7 @@ it("reports only live managed processes to an authenticated operator", async () 
     const sessionId = (proc.structuredContent as { sessionId?: string } | undefined)?.sessionId;
     expect(typeof sessionId).toBe("string");
     const impact = await (await fetch(url, { headers })).json();
-    expect(impact).toMatchObject({ managedProcesses: [{ sessionId }], durableJobs: [], managedBrowser: false });
+    expect(impact).toMatchObject({ managedProcesses: [{ sessionId }], durableJobs: [], managedBrowser: false, atomicSnapshot: false, idleConfirmed: false, activeMcpRequests: 0, jobInspectionAvailable: true, browserInspectionAvailable: true });
     expect(impact.managedProcesses[0]).not.toHaveProperty("command");
     expect((await (await get("/health")).json()).activeManagedProcesses).toBe(1);
     await client.callTool({ name: "terminate_process", arguments: { sessionId } });
@@ -176,6 +180,38 @@ it("reports only live managed processes to an authenticated operator", async () 
       expect((await (await fetch(url, { headers })).json()).managedProcesses).toEqual([]);
     });
   } finally { await client.close(); }
+});
+
+it("does not omit a running durable job without a runner claim", async () => {
+  const jobs = vi.spyOn(ReachJobManager.prototype, "list").mockReturnValue([
+    { id: "fixture-running-unclaimed", status: "running", command: "hidden-fixture-command" },
+    { id: "fixture-finished", status: "stopped", command: "hidden-fixture-command" },
+  ] as ReturnType<ReachJobManager["list"]>);
+  try {
+    const response = await fetch(base + "/api/reach/restart-impact", {
+      headers: { Authorization: "Bearer " + access },
+    });
+    expect(response.status).toBe(200);
+    const impact = await response.json();
+    expect(impact.durableJobs).toEqual([{ id: "fixture-running-unclaimed", runId: null }]);
+    expect(impact.idleConfirmed).toBe(false);
+    expect(JSON.stringify(impact)).not.toContain("hidden-fixture-command");
+  } finally { jobs.mockRestore(); }
+});
+
+it("fails closed on browser inspection error during restart preflight", async () => {
+  await server.close();
+  const services = createServices(config);
+  server = await startHttpServer(config, services);
+  const probe = vi.spyOn(services.browser, "status").mockRejectedValue(new Error("probe unavailable"));
+  const response = await fetch(base + "/api/reach/restart-impact", {
+    headers: { Authorization: "Bearer " + access },
+  });
+  expect(response.status).toBe(200);
+  const impact = await response.json();
+  expect(impact).toMatchObject({ browserInspectionAvailable: false,
+    managedBrowser: null, idleConfirmed: false, atomicSnapshot: false });
+  probe.mockRestore();
 });
 
 it("detects an idle storage failure and recovery on scheduled checks", async () => {
@@ -198,4 +234,22 @@ it("detects an idle storage failure and recovery on scheduled checks", async () 
     vi.useRealTimers();
     server = await startHttpServer(config, createServices(config));
   }
+});
+
+
+it("returns fail-closed restart evidence when the browser status probe never settles", async () => {
+  await server.close();
+  const services = createServices(config);
+  server = await startHttpServer(config, services);
+  const probe = vi.spyOn(services.browser, "status").mockImplementation(() => new Promise(() => {}));
+  const started = Date.now();
+  const response = await fetch(base + "/api/reach/restart-impact", {
+    headers: { Authorization: "Bearer " + access }, signal: AbortSignal.timeout(5_000),
+  });
+  const impact = await response.json();
+  probe.mockRestore();
+  expect(Date.now() - started).toBeLessThan(3_000);
+  expect(impact).toMatchObject({ browserInspectionAvailable: false, managedBrowser: null,
+    idleConfirmed: false, atomicSnapshot: false, backgroundReconciliationActive: expect.any(Boolean) });
+  expect(response.status).toBe(200);
 });
