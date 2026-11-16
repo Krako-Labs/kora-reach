@@ -1,0 +1,10 @@
+KORA Reach Mail is a separate wrapper and deployment recipe.
+
+The Docker Mailserver project is maintained by its upstream contributors:
+https://github.com/docker-mailserver/docker-mailserver
+
+Its repository uses the MIT license. The container includes other software
+with its own licenses, including Postfix and Dovecot. This package references
+the upstream image and does not redistribute the image or those binaries.
+
+Pinned upstream release: Docker Mailserver 17.0.0, checked 2026-11-15.

@@ -33,7 +33,7 @@ export function registerKoraTools(
 ): void {
   server.registerTool("kora_local_task", {
     title: "Run a KORA local task without new model inference",
-    description: "Run KORA's deterministic/local-first CLI on this Mac. Detect tests, organize files, reuse local cache, verify locally and return execution statistics. NEVER invokes Codex or an LLM inside this tool; if it cannot solve the task, reason about its failure in the current ChatGPT or Claude conversation and use MCP file/exec tools to apply a fix. File organization changes files; require approval before use.",
+    description: "Run KORA's deterministic/local-first CLI on this computer. Detect tests, organize files, reuse local cache, verify locally and return execution statistics. NEVER invokes Codex or an LLM inside this tool; if it cannot solve the task, reason about its failure in the current ChatGPT or Claude conversation and use MCP file/exec tools to apply a fix. File organization changes files; require approval before use.",
     inputSchema: {
       task: z.string().trim().min(5).max(2000),
       workdir: z.string().optional().describe("An existing authorized workspace directory."),

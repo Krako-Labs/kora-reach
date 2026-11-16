@@ -105,6 +105,8 @@ export function registerControlWorkflow(
   config: AppConfig,
   services: McpServices,
 ) {
+  // Headless servers have no GUI/browser workflow or background GUI reconciler.
+  if (!services.browser || !services.computer) return async () => {};
   const files = services.fileService;
   const browser = services.browser;
   const dir = (id: string) => path.join(config.reachStateDirectory, "control-jobs", z.uuid().parse(id));

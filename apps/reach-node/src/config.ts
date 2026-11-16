@@ -1,7 +1,11 @@
 import os from "node:os";
 import path from "node:path";
 
+export type ReachCapabilityProfile = "desktop" | "server";
+
 export interface AppConfig {
+  reachCapabilityProfile?: ReachCapabilityProfile;
+  reachMailDirectory?: string;
   host: string;
   port: number;
   endpoint: string;
@@ -103,10 +107,21 @@ function normalizeOAuthUrl(value: string | undefined, name: string): string {
   return url.href;
 }
 
+export function reachCapabilityProfile(config: AppConfig): ReachCapabilityProfile {
+  return config.reachCapabilityProfile ?? (process.platform === "darwin" ? "desktop" : "server");
+}
+
+function parseCapabilityProfile(value: string | undefined): ReachCapabilityProfile {
+  const profile = value?.trim() || (process.platform === "darwin" ? "desktop" : "server");
+  if (profile !== "desktop" && profile !== "server") throw new Error("KRAKO_REACH_PROFILE must be desktop or server");
+  return profile;
+}
+
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
   processCwd = process.cwd(),
 ): AppConfig {
+  const profile = parseCapabilityProfile(env.KRAKO_REACH_PROFILE);
   const allowNoAuth = parseBoolean(env.MCP_ALLOW_NO_AUTH, false);
   const authToken = env.MCP_AUTH_TOKEN?.trim() || undefined;
   const oauthEnabled = parseBoolean(env.MCP_OAUTH_ENABLED, false);
@@ -127,6 +142,10 @@ export function loadConfig(
   if (env.KRAKO_REACH_POLICY_FILE !== undefined &&
       (!env.KRAKO_REACH_POLICY_FILE.trim() || !path.isAbsolute(env.KRAKO_REACH_POLICY_FILE.trim()))) {
     throw new Error("KRAKO_REACH_POLICY_FILE must be an absolute path");
+  }
+  const reachMailDirectory = env.KRAKO_REACH_MAIL_DIR?.trim();
+  if (env.KRAKO_REACH_MAIL_DIR !== undefined && (!reachMailDirectory || !path.isAbsolute(reachMailDirectory))) {
+    throw new Error("KRAKO_REACH_MAIL_DIR must be an absolute path");
   }
   const defaultCwd = path.resolve(env.MCP_DEFAULT_CWD?.trim() || processCwd);
   const reachNodeName = env.KRAKO_REACH_NODE_NAME?.trim() || os.hostname();
@@ -150,6 +169,8 @@ export function loadConfig(
     : undefined;
 
   return {
+    reachCapabilityProfile: profile,
+    reachMailDirectory,
     host: env.MCP_HOST?.trim() || "127.0.0.1",
     port: parseInteger(env.MCP_PORT, 3208, "MCP_PORT", 1, 65_535),
     endpoint,
@@ -192,8 +213,10 @@ export function loadConfig(
       60,
     ),
     defaultCwd,
-    defaultShell:
-      env.MCP_DEFAULT_SHELL?.trim() || env.SHELL?.trim() || "/bin/bash",
+    // A service account may have nologin or an unavailable interactive shell.
+    // Server commands use the documented Bash prerequisite unless overridden.
+    defaultShell: env.MCP_DEFAULT_SHELL?.trim() ||
+      (profile === "server" ? "/bin/bash" : env.SHELL?.trim() || "/bin/bash"),
     maxRequestBody: env.MCP_MAX_REQUEST_BODY?.trim() || "8mb",
     maxOutputBytes: parseInteger(
       env.MCP_MAX_OUTPUT_BYTES,
@@ -231,7 +254,7 @@ export function loadConfig(
       "MCP_MAX_EDIT_FILE_BYTES",
       4096,
     ),
-    reachConsoleEnabled: parseBoolean(env.KRAKO_REACH_CONSOLE_ENABLED, true),
+    reachConsoleEnabled: parseBoolean(env.KRAKO_REACH_CONSOLE_ENABLED, profile === "desktop"),
     reachConsolePath: env.KRAKO_REACH_CONSOLE_PATH?.trim() || "/console",
     reachStateDirectory: path.resolve(
       env.KRAKO_REACH_STATE_DIR?.trim() || path.join(processCwd, ".kora-reach"),

@@ -16,7 +16,7 @@ const headers = { authorization: "Bearer fixture-only-token", "content-type": "a
 
 beforeEach(async () => {
   dir = await mkdtemp(path.join(os.tmpdir(), "reach-admission-integration-"));
-  const config = loadConfig({
+  const config = loadConfig({ KRAKO_REACH_PROFILE: "desktop",
     MCP_HOST: "127.0.0.1", MCP_AUTH_TOKEN: "fixture-only-token",
     MCP_DEFAULT_CWD: dir, KRAKO_REACH_STATE_DIR: path.join(dir, "state"),
     KRAKO_REACH_CONSOLE_ENABLED: "true",
@@ -73,7 +73,7 @@ it("closes MCP, Console and OAuth admissions atomically but leaves liveness read
 });
 
 it("refuses fixture maintenance after an effect claim survives a Node restart", async () => {
-  const config = loadConfig({
+  const config = loadConfig({ KRAKO_REACH_PROFILE: "desktop",
     MCP_HOST: "127.0.0.1", MCP_AUTH_TOKEN: "fixture-only-token",
     MCP_DEFAULT_CWD: dir, KRAKO_REACH_STATE_DIR: path.join(dir, "state"),
     KRAKO_REACH_CONSOLE_ENABLED: "true",
@@ -102,7 +102,7 @@ it("refuses fixture maintenance after an effect claim survives a Node restart", 
 });
 
 it("blocks fixture maintenance after restart when orphaned unlock evidence remains", async () => {
-  const config = loadConfig({
+  const config = loadConfig({ KRAKO_REACH_PROFILE: "desktop",
     MCP_HOST: "127.0.0.1", MCP_AUTH_TOKEN: "fixture-only-token",
     MCP_DEFAULT_CWD: dir, KRAKO_REACH_STATE_DIR: path.join(dir, "state"),
     KRAKO_REACH_CONSOLE_ENABLED: "true",
@@ -134,8 +134,8 @@ it("does not grant maintenance while a real HTTP diagnosis is in flight", async 
   let resume!: () => void;
   const inspecting = new Promise<void>(resolve => { entered = resolve; });
   const pending = new Promise<void>(resolve => { resume = resolve; });
-  const original = services.browser.status.bind(services.browser);
-  const spy = vi.spyOn(services.browser, "status").mockImplementation(async () => {
+  const original = services.browser!.status.bind(services.browser);
+  const spy = vi.spyOn(services.browser!, "status").mockImplementation(async () => {
     entered();
     await pending;
     return original();
@@ -181,7 +181,7 @@ it("does not call an aborted HTTP request idle while its effect may still run", 
   let resume!: () => void;
   const inspecting = new Promise<void>(resolve => { entered = resolve; });
   const pending = new Promise<void>(resolve => { resume = resolve; });
-  const spy = vi.spyOn(services.browser, "status").mockImplementation(async () => {
+  const spy = vi.spyOn(services.browser!, "status").mockImplementation(async () => {
     entered();
     await pending;
     return { running: false, connected: false, managed: false, tabs: 0 };
@@ -246,7 +246,7 @@ it("keeps a real authenticated MCP tool call inside the admission fence", async 
   let releaseBrowser!: () => void;
   const inspecting = new Promise<void>(resolve => { entered = resolve; });
   const pausedBrowser = new Promise<void>(resolve => { releaseBrowser = resolve; });
-  const status = vi.spyOn(services.browser, "status").mockImplementation(async () => {
+  const status = vi.spyOn(services.browser!, "status").mockImplementation(async () => {
     entered();
     await pausedBrowser;
     return { running: false, connected: false, managed: false, tabs: 0 };
@@ -318,7 +318,7 @@ it("does not mistake a detached running Console job for an idle server", async (
 });
 
 it("requires the server-owned browser inspection, not just the caller's idle assertion", async () => {
-  const spy = vi.spyOn(services.browser, "status").mockRejectedValue(new Error("CDP unavailable"));
+  const spy = vi.spyOn(services.browser!, "status").mockRejectedValue(new Error("CDP unavailable"));
   let switched = false;
   try {
     await expect(server.admission.withExclusiveFixture(async () => true, async () => {

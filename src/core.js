@@ -317,7 +317,7 @@ async function saveTrace(summary) {
 
 export async function doctor() {
   var checks = [];
-  checks.push({ name: "Node.js >= 22.12", ok: Number(process.versions.node.split(".")[0]) >= 22, detail: process.version });
+  checks.push({ name: "Node.js >= 22.12", ok: Number(process.versions.node.split(".")[0]) > 22 || (Number(process.versions.node.split(".")[0]) === 22 && Number(process.versions.node.split(".")[1]) >= 12), detail: process.version });
   var git = await runProcess("/usr/bin/env", ["git", "--version"], { timeoutMs: 5000 });
   checks.push({ name: "Git", ok: git.code === 0, detail: (git.stdout.trim() || git.stderr.trim()) });
   var codex = await findCodex();

@@ -11,7 +11,7 @@ import { startHttpServer } from "../src/http-server.js";
 
 it("exposes an MCP App UI that fetches repeated frames without a model call", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "kora-mcp-live-screen-"));
-  const config = loadConfig({
+  const config = loadConfig({ KRAKO_REACH_PROFILE: "desktop",
     MCP_AUTH_TOKEN: "screen-test-local-only",
     MCP_HOST: "127.0.0.1",
     MCP_DEFAULT_CWD: root,
@@ -21,11 +21,11 @@ it("exposes an MCP App UI that fetches repeated frames without a model call", as
 
   const services = createServices(config);
   let shots = 0;
-  services.computer.screenshot = async () => {
+  services.computer!.screenshot = async () => {
     shots++;
     return { mimeType: "image/png" as const, data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB" };
   };
-  services.computer.status = async () => ({
+  services.computer!.status = async () => ({
     platform: "darwin",
     screenRecording: "granted" as const,
     accessibility: "granted" as const,

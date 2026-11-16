@@ -27,7 +27,7 @@ const payload = () => ({
 });
 async function boot() {
   const config = loadConfig(
-    {
+    { KRAKO_REACH_PROFILE: "desktop",
       MCP_AUTH_TOKEN: "fixture",
       MCP_DEFAULT_CWD: root,
       KRAKO_REACH_STATE_DIR: path.join(root, "state"),
@@ -37,18 +37,18 @@ async function boot() {
   );
   config.port = 0;
   services = createServices(config);
-  vi.spyOn(services.browser, "listTabs").mockImplementation(async () =>
+  vi.spyOn(services.browser!, "listTabs").mockImplementation(async () =>
     ambiguous ? [tab, { ...tab, id: "tab-2" }] : [tab],
   );
-  vi.spyOn(services.browser, "getTab").mockResolvedValue(tab);
-  vi.spyOn(services.browser, "snapshot").mockResolvedValue({
+  vi.spyOn(services.browser!, "getTab").mockResolvedValue(tab);
+  vi.spyOn(services.browser!, "snapshot").mockResolvedValue({
     generation: 1,
     tabId: tab.id,
     origin: tab.origin,
     truncated: false,
     elements: [{ ref: "e1", tag: "button", role: "button", name: "Export" }],
   });
-  vi.spyOn(services.browser, "act").mockImplementation(async () => {
+  vi.spyOn(services.browser!, "act").mockImplementation(async () => {
     count++;
     if (uncertain) throw new Error("transport lost after dispatch");
     await writeFile(path.join(root, "output"), "verified");
@@ -186,7 +186,7 @@ it.each(["ELEMENT_NOT_FOUND", "ELEMENT_NOT_VISIBLE", "ELEMENT_DISABLED", "STALE_
     const attempts = vi.fn(async () => {
       throw Object.assign(new Error("CDP failed before action"), { code });
     });
-    vi.spyOn(services.browser, "captureDownload").mockImplementation(attempts);
+    vi.spyOn(services.browser!, "captureDownload").mockImplementation(attempts);
     const p = payload().plan;
     await call("control_begin", { jobId: id, plan: { ...p, captureDownload: true } });
     const response = await call("control_run", { jobId: id });
@@ -200,7 +200,7 @@ it.each(["ELEMENT_NOT_FOUND", "ELEMENT_NOT_VISIBLE", "ELEMENT_DISABLED", "STALE_
 );
 
 it("does not click when a captureDownload route lacks the guarded adapter", async () => {
-  Object.assign(services.browser, { captureDownload: undefined });
+  Object.assign(services.browser!, { captureDownload: undefined });
   const p = payload().plan;
   await call("control_begin", { jobId: id, plan: { ...p, captureDownload: true } });
   expect((await call("control_run", { jobId: id })).structuredContent)

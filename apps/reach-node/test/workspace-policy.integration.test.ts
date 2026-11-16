@@ -19,7 +19,7 @@ async function fixture(allowExecution: boolean, accessMode: "restricted" | "full
     writeFile(policyFile, JSON.stringify({ version: 2, mode: "restricted", roots: directories, allowExecution: allowed }));
   if (accessMode === "full") await writeFile(policyFile, JSON.stringify({ version: 2, mode: "full" }));
   else await setPolicy(allowExecution);
-  const config = loadConfig({ MCP_AUTH_TOKEN: "policy-http-credential", MCP_HOST: "127.0.0.1",
+  const config = loadConfig({ KRAKO_REACH_PROFILE: "desktop", MCP_AUTH_TOKEN: "policy-http-credential", MCP_HOST: "127.0.0.1",
     MCP_DEFAULT_CWD: workspace, MCP_DEFAULT_SHELL: "/bin/bash",
     KRAKO_REACH_STATE_DIR: path.join(root, "state"), KRAKO_REACH_POLICY_FILE: policyFile }, root);
   config.port = 0;

@@ -128,6 +128,7 @@ Supported test detection: npm, pnpm, bun, pytest, Cargo, and Go.
 
 - **ChatGPT → Mac:** authenticated file, command, browser, and macOS controls, subject to each Mac's permissions.
 - **Limited Persistent Goals:** observe an *already authorized* background job, restore its status after reconnect, and verify file evidence.
+- **Linux server prerelease ([v0.3.0-linux.1](https://github.com/Krako-Labs/kora-reach/releases/tag/v0.3.0-linux.1)):** authenticated files, commands, local tasks and persistent jobs without a desktop or Docker. The first real [ChatGPT Web-to-Linux canary passed](docs/LINUX_WEB_MCP_CANARY.md); see [Linux install and diagnostics](docs/LINUX_SETUP.md).
 
 **Not released:** automatic multi-Mac task scheduling, arbitrary multi-agent planning, or a fully integrated KORA Core runtime.
 
@@ -197,6 +198,7 @@ The default service is local-only. ChatGPT in the cloud needs an approved, authe
 
 - [ChatGPT MCP architecture and setup](docs/CHATGPT_FIRST_MCP.md)
 - [Mac installation and permissions](docs/PHASE_A_INSTALL.md)
+- [Linux installation, diagnostics and package verification](docs/LINUX_SETUP.md)
 - [Verified control QC and remaining gaps](docs/VERIFIED_CONTROL_QC.md)
 - [Safe update staging and its limitations](docs/P1_SAFE_NODE_UPDATE.md)
 - [Research and provider access](docs/RESEARCH.md)

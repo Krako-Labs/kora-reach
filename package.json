@@ -23,7 +23,10 @@
     "demo:fixture": "node scripts/make-demo-repo.mjs",
     "demo:files": "node scripts/make-file-demo.mjs",
     "setup:mac": "node scripts/setup-mac.mjs",
-    "access:doctor": "node scripts/access-doctor.mjs"
+    "access:doctor": "node scripts/access-doctor.mjs",
+    "setup:linux": "node scripts/setup-linux.mjs",
+    "doctor:linux": "node scripts/doctor-linux.mjs",
+    "package:linux": "node scripts/package-linux-preview.mjs"
   },
   "repository": {
     "type": "git",
