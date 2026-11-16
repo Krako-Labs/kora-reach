@@ -1,6 +1,6 @@
 # KORA Reach Linux — first developer preview
 
-**Status:** prerelease candidate. The released CLI remains at `v0.2.0`; this is the first separate Linux-server preview, not a production-ready multi-platform release.
+**Status:** first Linux-server developer prerelease (`v0.3.0-linux.1`). The stable CLI release remains `v0.2.0`; this does not certify a production-ready multi-platform installation.
 
 ## What works
 
@@ -14,7 +14,7 @@
 
 - Debian 13 x64 under Node 24: local build, test and archive-install checks.
 - Ubuntu 24.04 ARM64 (Lima): tests, real archive install, OAuth and file operations, controller restart, whole-VM restart and historical evidence preservation.
-- GitHub Linux x64 and ARM64 matrix: **do not claim passing until the published run confirms it**.
+- GitHub Linux matrix: Ubuntu22.04 x64 and Ubuntu24.04 x64/ARM64 × Node22/24 passed in all six jobs on PR #5. This does not replace device-specific or production validation.
 
 ## Install
 
