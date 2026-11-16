@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { AppConfig } from "./config.js";
+import { reachCapabilityProfile, type AppConfig } from "./config.js";
 import type { McpServices } from "./mcp-server.js";
 import { successResult } from "./tool-result.js";
 import { WorkspacePolicy } from "./workspace-policy.js";
@@ -20,10 +20,11 @@ const macPermissions = z.object({
 // file, logged-in browser session, or an unlocked macOS GUI. Never launch apps,
 // perform effects, read credentials, or change the active access policy here.
 export function registerReachPreflight(server: McpServer, config: AppConfig, services: McpServices): void {
+  const profile = reachCapabilityProfile(config);
   const policy = services.fileService.policy ?? new WorkspacePolicy(config);
   server.registerTool("reach_preflight", {
     title: "KORA Reach capability and access preflight",
-    description: "Before saying a connected Mac cannot be accessed, use this read-only tool to inspect effective file/shell policy, Chrome connection, and optional macOS permission grants. It never starts apps or checks access to a particular path. Chrome disconnected or GUI unprobed is not proof that Reach is unavailable.",
+    description: "Inspect the connected computer or server before reporting an access blocker. This read-only tool checks effective file/shell policy and configured capabilities. On desktop profiles, use this read-only tool to inspect effective file/shell policy, Chrome connection, and optional macOS permission grants. It never starts apps or checks access to a particular path. Chrome disconnected or GUI unprobed is not proof that Reach is unavailable.",
     inputSchema: { includeOsPermissions: z.boolean().default(false), includeInstalledServices: z.boolean().default(false) },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async ({ includeOsPermissions, includeInstalledServices }) => {
@@ -32,12 +33,12 @@ export function registerReachPreflight(server: McpServer, config: AppConfig, ser
     // Independent read-only probes run concurrently under one bounded deadline.
     // A stalled browser/CDP or native permission adapter cannot trap preflight.
     const [managed, attached, rawPermissions] = await Promise.all([
-      boundedReadOnlyProbe(() => services.browser.status()),
+      services.browser ? boundedReadOnlyProbe(() => services.browser!.status()) : Promise.resolve(undefined),
       services.existingChrome
         ? boundedReadOnlyProbe(() => services.existingChrome!.status())
         : Promise.resolve(undefined),
-      includeOsPermissions
-        ? boundedReadOnlyProbe(() => services.computer.status())
+      includeOsPermissions && services.computer
+        ? boundedReadOnlyProbe(() => services.computer!.status())
         : Promise.resolve(undefined),
     ]);
     // This opt-in read-only probe extracts only allowlisted launchd keys and
@@ -55,6 +56,7 @@ export function registerReachPreflight(server: McpServer, config: AppConfig, ser
     // unlocked desktop is usable. These reasons are diagnostic, not grants.
     const permission = osPermissions?.success ? osPermissions.data : undefined;
     const guiCapability = (grant: "granted" | "denied" | "unavailable" | undefined) => {
+      if (profile === "server") return { state: "unsupported", reason: "server_profile_has_no_gui" };
       if (!includeOsPermissions) return { state: "not_probed", reason: "os_permission_not_checked" };
       if (!permission) return { state: "unknown", reason: "os_permission_probe_failed" };
       if (grant === "denied") return { state: "blocked", reason: "os_permission_denied" };
@@ -86,6 +88,8 @@ export function registerReachPreflight(server: McpServer, config: AppConfig, ser
         stableIdentityVerified: Boolean(services.nodeIdentity),
       },
       runtime: {
+        capabilityProfile: profile,
+        platform: process.platform,
         nodePackageVersion: REACH_NODE_PACKAGE_VERSION,
         httpContractVersion: REACH_HTTP_CONTRACT_VERSION,
         buildIdentity,
@@ -106,20 +110,20 @@ export function registerReachPreflight(server: McpServer, config: AppConfig, ser
         shell: policy.allowExecution
           ? { state: "unknown", reason: "execution_permitted_but_unsandboxed" }
           : { state: "blocked", reason: "execution_disabled_by_policy" },
-        managedBrowser: browserCapability(true, managed),
+        managedBrowser: browserCapability(Boolean(services.browser), managed),
         existingChrome: browserCapability(Boolean(services.existingChrome), attached),
         guiCapture: guiCapability(permission?.screenRecording),
         guiInput: guiCapability(permission?.accessibility),
       },
       browser: {
-        managedChrome: !managed ? "status_unknown" : managed.connected ? "connected" : "not_connected",
+        managedChrome: !services.browser ? "not_configured" : !managed ? "status_unknown" : managed.connected ? "connected" : "not_connected",
         existingChrome: !services.existingChrome ? "not_configured" : !attached
           ? "status_unknown" : attached.connected ? "connected" : "configured_not_connected",
         sessionIdentityVerified: false,
         requiresTargetCheck: true,
       },
       macOS: {
-        permissions: !includeOsPermissions ? "not_probed" : !osPermissions?.success ? "probe_failed" : osPermissions.data,
+        permissions: profile === "server" ? "not_applicable" : !includeOsPermissions ? "not_probed" : !osPermissions?.success ? "probe_failed" : osPermissions.data,
         unlockedGuiSessionVerified: false,
       },
       runtimeParity: "not_verified",
@@ -127,8 +131,13 @@ export function registerReachPreflight(server: McpServer, config: AppConfig, ser
         : installedServices ?? { state: "not_verified", reason: "probe_failed", upgradeReady: false },
       restrictions: [
         "An authenticated MCP connection does not authorize every path or browser account.",
-        "Chrome not connected is not proof that an authorized attach/start would fail.",
-        "macOS permission preflight does not prove an unlocked, usable GUI session.",
+        ...(profile === "desktop" ? [
+          "Chrome not connected is not proof that an authorized attach/start would fail.",
+          "macOS permission preflight does not prove an unlocked, usable GUI session.",
+        ] : [
+          "Server profile does not provide desktop, browser or screen-control tools.",
+          "A NAS filesystem path is not proof of NAS account, app or shared-folder management support.",
+        ]),
         "Never bypass a deliberate policy denial or retry an uncertain side effect.",
         "Capability results are observed at different times; recheck authority and target before any effect.",
         "An admitted MCP request does not prove OAuth storage readiness, principal identity or scope.",

@@ -57,7 +57,7 @@ beforeEach(async () => {
   } });
   await writeFile(fault.stateFile, original, { mode: 0o600 });
   await writeFile(path.join(dir, "probe.txt"), "read-ok");
-  config = loadConfig({ MCP_OAUTH_ENABLED: "true", MCP_OAUTH_APPROVAL_KEY: "test-only",
+  config = loadConfig({ KRAKO_REACH_PROFILE: "desktop", MCP_OAUTH_ENABLED: "true", MCP_OAUTH_APPROVAL_KEY: "test-only",
     MCP_PUBLIC_URL: base, MCP_OAUTH_STATE_FILE: fault.stateFile, MCP_HOST: "127.0.0.1",
     MCP_PORT: String(port), MCP_DEFAULT_CWD: dir, MCP_OAUTH_STORAGE_TIMEOUT_MS: "180",
     KRAKO_REACH_STATE_DIR: path.join(dir, "state") }, dir);
@@ -203,7 +203,7 @@ it("fails closed on browser inspection error during restart preflight", async ()
   await server.close();
   const services = createServices(config);
   server = await startHttpServer(config, services);
-  const probe = vi.spyOn(services.browser, "status").mockRejectedValue(new Error("probe unavailable"));
+  const probe = vi.spyOn(services.browser!, "status").mockRejectedValue(new Error("probe unavailable"));
   const response = await fetch(base + "/api/reach/restart-impact", {
     headers: { Authorization: "Bearer " + access },
   });
@@ -241,7 +241,7 @@ it("returns fail-closed restart evidence when the browser status probe never set
   await server.close();
   const services = createServices(config);
   server = await startHttpServer(config, services);
-  const probe = vi.spyOn(services.browser, "status").mockImplementation(() => new Promise(() => {}));
+  const probe = vi.spyOn(services.browser!, "status").mockImplementation(() => new Promise(() => {}));
   const started = Date.now();
   const response = await fetch(base + "/api/reach/restart-impact", {
     headers: { Authorization: "Bearer " + access }, signal: AbortSignal.timeout(5_000),

@@ -45,6 +45,7 @@ export interface ReachInstalledServicePreflight {
   upgradeReady: false;
   atomicSnapshot: false;
   services: ReachInstalledService[];
+  manager?: "launchd" | "systemd-user";
 }
 export interface InstalledServiceProbeOptions {
   // Overrides are for isolated tests; the MCP never accepts these from users.
@@ -144,10 +145,59 @@ function loadedRecords(output: string): Map<string, number | null> {
   return records;
 }
 
+// A Linux server can run without systemd. Inspect only this package's known
+// user unit and allowlisted status fields; never dump a unit/environment.
+async function inspectLinuxUserService(run: Runner): Promise<ReachInstalledServicePreflight> {
+  let raw: string;
+  try {
+    raw = await run("systemctl", ["--user", "show", "kora-reach.service",
+      "--property=LoadState,ActiveState,MainPID,UnitFileState,Restart", "--no-pager"]);
+  } catch {
+    return { state: "not_verified", reason: "service_exclusion_not_verified",
+      manager: "systemd-user", upgradeReady: false, atomicSnapshot: false, services: [] };
+  }
+  const allowed = new Set(["LoadState", "ActiveState", "MainPID", "UnitFileState", "Restart"]);
+  const properties = new Map<string, string>();
+  for (const line of raw.slice(0, 16_384).split(String.fromCharCode(10))) {
+    const separator = line.indexOf("=");
+    const key = line.slice(0, separator);
+    if (separator > 0 && allowed.has(key)) properties.set(key, line.slice(separator + 1).trim());
+  }
+  const load = properties.get("LoadState");
+  const active = properties.get("ActiveState");
+  const unit = properties.get("UnitFileState");
+  const restart = properties.get("Restart");
+  const pidValue = properties.get("MainPID") ?? "";
+  const pid = /^[1-9][0-9]*$/.test(pidValue) && Number.isSafeInteger(Number(pidValue))
+    ? Number(pidValue) : null;
+  const loaded: Loaded = ["active", "activating", "reloading", "deactivating"].includes(active ?? "")
+    ? "yes" : ["inactive", "failed"].includes(active ?? "") || load === "not-found" ? "no" : "unknown";
+  const runAtLoad: Flag = ["enabled", "enabled-runtime"].includes(unit ?? "") ? "enabled"
+    : ["disabled", "static", "masked", "masked-runtime"].includes(unit ?? "") ? "disabled" : "unknown";
+  const keepAlive: Flag = restart === "no" ? "disabled"
+    : ["always", "on-success", "on-failure", "on-abnormal", "on-watchdog", "on-abort"].includes(restart ?? "")
+      ? "enabled" : "unknown";
+  const service: ReachInstalledService = {
+    label: "kora-reach.service", kind: "node",
+    config: load === "not-found" ? "absent" : load === "loaded" ? "present" : "unavailable",
+    loaded, pid, runAtLoad, keepAlive,
+    disabled: unit === "masked" || unit === "masked-runtime" ? "enabled" : unit ? "disabled" : "unknown",
+    processExecutable: pid ? await processExecutable(pid, run) : "not_probed",
+    buildIdentity: "not_verified", stateIdentity: "not_verified",
+  };
+  const reason = loaded === "yes" ? "node_job_loaded"
+    : service.config === "present" && keepAlive === "enabled" ? "installed_node_auto_restart"
+    : service.config === "present" && runAtLoad === "enabled" ? "installed_node_run_at_load"
+    : "service_exclusion_not_verified";
+  return { state: reason === "service_exclusion_not_verified" ? "not_verified" : "blocked",
+    reason, manager: "systemd-user", upgradeReady: false, atomicSnapshot: false, services: [service] };
+}
+
 export async function inspectReachInstalledServices(
   options: InstalledServiceProbeOptions = {},
 ): Promise<ReachInstalledServicePreflight> {
   const platform = options.platform ?? process.platform;
+  if (platform === "linux") return inspectLinuxUserService(options.run ?? runReadOnly);
   if (platform !== "darwin") {
     return { state: "unsupported", reason: "unsupported_platform", upgradeReady: false,
       atomicSnapshot: false, services: [] };

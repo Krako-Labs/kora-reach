@@ -535,7 +535,7 @@ function renderAuthorizationPage(
   <main>
     <h1>KRAKO Reach 연결 승인</h1>
     <p><strong>${escapeHtml(clientName)}</strong>이 이 서버의 MCP 도구 사용 권한을 요청했습니다.</p>
-    <p class="warning">승인하면 연결된 MCP 클라이언트가 이 서버에서 root 권한으로 명령을 실행하고 파일을 변경할 수 있습니다.</p>
+    <p class="warning">승인하면 연결된 MCP 클라이언트가 서비스 사용자 권한과 설정된 접근 정책 범위에서 명령을 실행하고 파일을 변경할 수 있습니다.</p>
     ${invalidKey ? '<p class="error">인증키가 올바르지 않습니다.</p>' : ""}
     <form method="post" action="/authorize" autocomplete="off">
       ${fields}

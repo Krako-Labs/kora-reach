@@ -24,7 +24,7 @@ async function fixture(
   await writeFile(policyFile, JSON.stringify(mode === "full"
     ? { version: 2, mode }
     : { version: 2, mode, roots: [workspace], allowExecution }), { mode: 0o600 });
-  const config = loadConfig({
+  const config = loadConfig({ KRAKO_REACH_PROFILE: "desktop",
     MCP_HOST: "127.0.0.1",
     MCP_AUTH_TOKEN: "preflight-fixture-only",
     MCP_DEFAULT_CWD: workspace,
@@ -34,8 +34,8 @@ async function fixture(
   }, root);
   config.port = 0;
   const services = createServices(config);
-  const browserStart = vi.spyOn(services.browser, "start");
-  const browserStatus = vi.spyOn(services.browser, "status");
+  const browserStart = vi.spyOn(services.browser!, "start");
+  const browserStatus = vi.spyOn(services.browser!, "status");
   if (options.managedConnected !== undefined) {
     browserStatus.mockResolvedValue({
       running: true, connected: options.managedConnected, managed: true, tabs: 0,
@@ -51,7 +51,7 @@ async function fixture(
       close: vi.fn().mockResolvedValue(undefined),
     } as unknown as typeof services.existingChrome;
   }
-  const computerStatus = vi.spyOn(services.computer, "status");
+  const computerStatus = vi.spyOn(services.computer!, "status");
   const server = await startHttpServer(config, services);
   const address = server.httpServer.address();
   if (!address || typeof address === "string") throw new Error("Missing test listener");

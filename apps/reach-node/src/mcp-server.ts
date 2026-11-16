@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { WorkspacePolicy } from "./workspace-policy.js";
 import { ReachAudit } from "./reach-audit.js";
-import type { AppConfig } from "./config.js";
+import { reachCapabilityProfile, type AppConfig } from "./config.js";
 import { registerExecTools } from "./exec-tools.js";
 import { FileService } from "./file-service.js";
 import { registerFileTools } from "./file-tools.js";
@@ -19,21 +19,24 @@ import { registerLiveScreen } from "./live-screen-tools.js";
 import { registerBackgroundComputerTools } from "./background-computer-tools.js";
 import { registerReachPreflight } from "./reach-preflight.js";
 import { registerReachGoalTools } from "./reach-goal-tools.js";
+import { registerReachJobTools } from "./reach-job-tools.js";
+import { registerMailTools } from "./mail-tools.js";
 import type { ReachNodeIdentity } from "./reach-node-registry.js";
 import { REACH_NODE_PACKAGE_VERSION } from "./runtime-versions.js";
 
 export interface McpServices {
   processManager: ProcessManager;
   fileService: FileService;
-  browser: BrowserPort;
+  browser?: BrowserPort;
   repairJobs?: import("./reach-job-manager.js").ReachJobManager;
   goals?: import("./reach-goals.js").ReachGoalStore;
   nodeIdentity?: ReachNodeIdentity;
   existingChrome?: BrowserPort;
-  computer: ComputerPort;
+  computer?: ComputerPort;
 }
 
 export function createServices(config: AppConfig): McpServices {
+  const profile = reachCapabilityProfile(config);
   const policy = new WorkspacePolicy(config);
   const audit = new ReachAudit(config.reachStateDirectory, policy.enabled);
   return {
@@ -50,9 +53,12 @@ export function createServices(config: AppConfig): McpServices {
       maxEditFileBytes: config.maxEditFileBytes,
       maxOutputBytes: config.maxOutputBytes,
     }),
-    browser: new PlaywrightBrowserAdapter(),
-    existingChrome: process.env.KORA_EXISTING_CHROME_PORT ? new PlaywrightBrowserAdapter(undefined, Number(process.env.KORA_EXISTING_CHROME_PORT)) : undefined,
-    computer: new MacOSComputerAdapter(),
+    ...(profile === "desktop" ? {
+      browser: new PlaywrightBrowserAdapter(),
+      existingChrome: process.env.KORA_EXISTING_CHROME_PORT
+        ? new PlaywrightBrowserAdapter(undefined, Number(process.env.KORA_EXISTING_CHROME_PORT)) : undefined,
+      computer: new MacOSComputerAdapter(),
+    } : {}),
   };
 }
 
@@ -64,14 +70,17 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
       ...(config.publicUrl ? { websiteUrl: config.publicUrl } : {}),
     },
     {
-      instructions:
-         "KORA Reach connects ChatGPT and other MCP hosts to the user's own Mac. First call reach_preflight for Mac tasks when access or capability is unclear; it never changes settings. Prefer kora_local_task for known deterministic tests/files/verification without extra model inference. Use authenticated exec_command, filesystem, browser, computer, and process tools for tasks that genuinely require reasoning. For existing browser tabs and Mac windows use control_begin, control_run and control_status. Complete authorized routine diagnostics, safe recovery and verification directly with available tools before asking the user to act. Continue independent work when one path is blocked. For authorized background UI work set startInBackground; a locked session is retained for bounded automatic resumption after unlock. Never bypass authentication or replay an uncertain action. If semantic controls are unavailable and the session permits capture, use control_frame before reporting failure. Never treat local action counts as model token savings; respect local access policy and approvals.",
+      instructions: reachCapabilityProfile(config) === "server"
+        ? "KORA Reach connects your existing AI conversation to your Linux server or NAS. Call reach_preflight when access is unclear. Use authenticated file, command and process tools within the approved workspace and service account permissions. No desktop, browser, screen capture or local model is required. Ordinary exec_command processes are session jobs; use reach_job_start/status for durable work that must survive a Node restart. Verify actual output before reporting completion. Never replay an uncertain side effect or bypass authentication. Shell execution is not an OS sandbox. Never treat local action counts as model token savings."
+        : "KORA Reach connects ChatGPT and other MCP hosts to the user's own Mac. First call reach_preflight for Mac tasks when access or capability is unclear; it never changes settings. Prefer kora_local_task for known deterministic tests/files/verification without extra model inference. Use authenticated exec_command, filesystem, browser, computer, and process tools for tasks that genuinely require reasoning. For existing browser tabs and Mac windows use control_begin, control_run and control_status. Complete authorized routine diagnostics, safe recovery and verification directly with available tools before asking the user to act. Continue independent work when one path is blocked. For authorized background UI work set startInBackground; a locked session is retained for bounded automatic resumption after unlock. Never bypass authentication or replay an uncertain action. If semantic controls are unavailable and the session permits capture, use control_frame before reporting failure. Never treat local action counts as model token savings; respect local access policy and approvals.",
       capabilities: { logging: {} },
     },
   );
 
   registerReachPreflight(server, config, services);
   if (services.goals) registerReachGoalTools(server, services.goals);
+  if (services.repairJobs) registerReachJobTools(server, services.repairJobs);
+  registerMailTools(server, config, services.fileService);
   registerExecTools(
     server,
     config,
@@ -81,10 +90,12 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
   registerFileTools(server, config, services.fileService);
   registerKoraTools(server, config, services.processManager, services.fileService);
   const policy = services.fileService.policy ?? new WorkspacePolicy(config);
-  registerControlWorkflow(server, config, services);
-  registerBrowserTools(server, services.browser, policy, services.fileService.audit, config.reachNodeName);
-  registerComputerTools(server, services.computer, policy, services.fileService.audit, config.reachNodeName);
-  registerLiveScreen(server, services.computer, policy, services.fileService.audit);
-  registerBackgroundComputerTools(server, policy, services.fileService.audit);
+  if (reachCapabilityProfile(config) === "desktop" && services.browser && services.computer) {
+    registerControlWorkflow(server, config, services);
+    registerBrowserTools(server, services.browser, policy, services.fileService.audit, config.reachNodeName);
+    registerComputerTools(server, services.computer, policy, services.fileService.audit, config.reachNodeName);
+    registerLiveScreen(server, services.computer, policy, services.fileService.audit);
+    registerBackgroundComputerTools(server, policy, services.fileService.audit);
+  }
   return server;
 }

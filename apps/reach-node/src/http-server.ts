@@ -16,7 +16,7 @@ import {
 import express, { type Request, type Response } from "express";
 
 import { createBearerAuth, createHostValidation } from "./auth.js";
-import type { AppConfig } from "./config.js";
+import { reachCapabilityProfile, type AppConfig } from "./config.js";
 import { errorMessage } from "./errors.js";
 import { createMcpServer, type McpServices } from "./mcp-server.js";
 import { oauthRequestId } from "./oauth-storage.js";
@@ -187,11 +187,13 @@ export async function startHttpServer(
   const authenticate = createBearerAuth(config, oauthProvider);
   const parseMcpJson = express.json({ limit: config.maxRequestBody });
 
-  const reachJobs = (config.reachConsoleEnabled || process.env.KORA_CONTROL_REPAIR_WORKSPACE)
+  const serverProfile = reachCapabilityProfile(config) === "server";
+  const persistentServicesEnabled = config.reachConsoleEnabled || serverProfile;
+  const reachJobs = (persistentServicesEnabled || process.env.KORA_CONTROL_REPAIR_WORKSPACE)
     ? await ReachJobManager.open(config, services.processManager, services.fileService)
     : undefined;
   services.repairJobs = reachJobs;
-  const reachNodes = config.reachConsoleEnabled
+  const reachNodes = persistentServicesEnabled
     ? await ReachNodeRegistry.open(config).catch(async error => { await reachJobs?.close(); throw error; })
     : undefined;
   // The Console's persistent node registry is the source of local identity.
@@ -210,12 +212,14 @@ export async function startHttpServer(
       )) return false;
       if (services.processManager.list().some(process => process.running)) return false;
       const [managed, attached] = await Promise.all([
-        boundedReadOnlyProbe(() => services.browser.status()),
+        services.browser
+          ? boundedReadOnlyProbe(() => services.browser!.status())
+          : Promise.resolve(undefined),
         services.existingChrome
           ? boundedReadOnlyProbe(() => services.existingChrome!.status())
           : Promise.resolve(undefined),
       ]);
-      if (!managed || managed.running || managed.connected) return false;
+      if (services.browser && (!managed || managed.running || managed.connected)) return false;
       if (services.existingChrome && (!attached || attached.running || attached.connected)) return false;
       return true;
     } catch {
@@ -234,7 +238,7 @@ export async function startHttpServer(
     // A snapshot is diagnostic evidence, NOT an exclusive service-idle lock.
     // Never silently hide a browser probe failure or an active job that lacks a
     // durable runner ID: either condition must block unattended activation.
-    const browser = await boundedReadOnlyProbe(() => services.browser.status());
+    const browser = services.browser ? await boundedReadOnlyProbe(() => services.browser!.status()) : undefined;
     const jobs = reachJobs?.list();
     const durableControlEffects = await boundedReadOnlyProbe(
       () => inspectDurableControlEffects(config.reachStateDirectory),
@@ -248,10 +252,11 @@ export async function startHttpServer(
       jobInspectionAvailable: Boolean(jobs),
       // Status only. Never expose a job path, claim body, or an account identifier.
       durableControlEffects,
-      browserInspectionAvailable: Boolean(browser),
+      browserInspectionAvailable: !services.browser || Boolean(browser),
+      browserConfigured: Boolean(services.browser),
       managedProcesses: services.processManager.list().filter(p => p.running)
         .map(({ sessionId, pid, startedAt }) => ({ sessionId, pid, startedAt })),
-      managedBrowser: browser ? browser.managed && browser.running : null,
+      managedBrowser: !services.browser ? false : browser ? browser.managed && browser.running : null,
       durableJobs: (jobs ?? []).filter(job => job.status === "running")
         .map(job => ({ id: job.id, runId: job.runId ?? null })),
     });
@@ -261,8 +266,10 @@ export async function startHttpServer(
     const reachPreviews = new ReachPreviewSessions();
     app.use("/api/reach/preview", reachPreviewApi(reachJobs, reachNodes, reachPreviews));
     app.use("/api/reach", authenticate, reachConsoleApi(reachJobs, reachNodes, reachPreviews, reachGoals));
-    app.use(config.reachConsolePath, reachConsoleStatic());
-    app.get("/", (_request, response) => response.redirect(config.reachConsolePath));
+    if (config.reachConsoleEnabled) {
+      app.use(config.reachConsolePath, reachConsoleStatic());
+      app.get("/", (_request, response) => response.redirect(config.reachConsolePath));
+    }
   }
 
   let lastAuthReady: boolean | undefined;
@@ -312,6 +319,7 @@ export async function startHttpServer(
       elevatedExecutionRisk: (services.fileService.policy?.restricted ?? false) &&
         (services.fileService.policy?.allowExecution ?? false),
       oauthEnabled: config.oauthEnabled,
+      capabilityProfile: reachCapabilityProfile(config),
       consoleEnabled: config.reachConsoleEnabled,
       consolePath: config.reachConsolePath,
       // The public liveness endpoint must not expose persistent Mac identity.
@@ -409,14 +417,14 @@ export async function startHttpServer(
   });
 
   const resume = registerControlWorkflow(undefined, config, services);
-  const resumeInterval = setInterval(() => {
+  const resumeInterval = !serverProfile ? setInterval(() => {
     if (pendingResume) return;
     const release = admission.enter();
     if (!release) return;
     pendingResume = Promise.resolve().then(resume)
       .catch(() => console.error("Control repair reconciliation failed"))
       .finally(() => { pendingResume = undefined; release(); });
-  }, 2000).unref();
+  }, 2000).unref() : undefined;
   // Opt-in P2 receipt observation is bounded by the same admission fence as
   // MCP/Console requests. It does not dispatch jobs or use the model.
   reachGoals?.startAuthorizedContinuation(() => admission.enter());
@@ -432,7 +440,7 @@ export async function startHttpServer(
     await Promise.allSettled(requests.map((request) => request.server.close()));
     await reachGoals?.stopAuthorizedContinuation();
     await reachJobs?.close();
-    await services.browser.close();
+    await services.browser?.close();
     await services.existingChrome?.close();
     await services.processManager.shutdown();
     await new Promise<void>((resolve, reject) => {

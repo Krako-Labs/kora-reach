@@ -15,7 +15,7 @@ export function registerReachGoalTools(server: McpServer, goals: ReachGoalStore)
   }));
   server.registerTool("reach_goal_record_verification", {
     title: "Record a verified Reach goal observation once",
-    description: "After a permitted local job reaches verified, durably record the first verified observation for that exact goal, Mac, runner and acceptance criterion. Never executes or retries a job. The receipt is historical; current status always rechecks live workspace evidence.",
+    description: "After a permitted local job reaches verified, durably record the first verified observation for that exact goal, node, runner and acceptance criterion. Never executes or retries a job. The receipt is historical; current status always rechecks live workspace evidence.",
     inputSchema: { goalId: z.uuid() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async ({ goalId }) => successResult({ ...await goals.recordVerification(goalId) }));

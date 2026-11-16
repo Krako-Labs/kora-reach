@@ -6,7 +6,7 @@
   "description": "KORA Reach ChatGPT/Claude MCP server and remote computer execution node",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
@@ -18,7 +18,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check:macos-ui": "node scripts/check-macos-ui-contract.mjs",
     "check": "npm run typecheck && npm run build && npm test",
-    "check:ci": "npm run typecheck && npm run build && npm run test:ci"
+    "check:ci": "npm run typecheck && npm run build && npm run test:ci",
+    "build:server": "node scripts/build-server.mjs",
+    "test:server": "vitest run --maxWorkers=1 test/server-profile.integration.test.ts test/linux-service-preflight.test.ts test/config.test.ts test/file-service.test.ts test/process-manager.test.ts test/mcp.integration.test.ts test/auth-security.integration.test.ts test/workspace-policy.integration.test.ts test/reach-job-manager.test.ts test/reach-durability.test.ts test/reach-build-identity.test.ts test/reach-goals.integration.test.ts test/reach-goal-continuation.integration.test.ts test/reach-goal-hard-crash.integration.test.ts",
+    "check:server": "npm run typecheck && npm run build:server && npm run test:server",
+    "test:linux-package": "vitest run --maxWorkers=1 test/linux-package.integration.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",

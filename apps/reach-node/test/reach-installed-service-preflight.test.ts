@@ -251,7 +251,7 @@ describe("typed, read-only installed Reach LaunchAgent preflight", () => {
   it("does not inspect the filesystem on non-macOS hosts", async () => {
     const f = await fixture();
     const result = await inspectReachInstalledServices({
-      platform: "linux", launchAgentsDirectory: f.dir, run: f.run,
+      platform: "win32", launchAgentsDirectory: f.dir, run: f.run,
     });
     expect(result).toMatchObject({
       state: "unsupported", reason: "unsupported_platform", upgradeReady: false, services: [],

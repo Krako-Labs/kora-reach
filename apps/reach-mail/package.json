@@ -1,0 +1,15 @@
+{
+  "name": "kora-reach-mail",
+  "version": "0.1.0-preview.1",
+  "private": true,
+  "description": "Local mail-server packaging and administration for KORA Reach",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=22.12.0" },
+  "bin": { "reach-mail": "./bin/reach-mail.mjs" },
+  "files": ["bin", "src", "scripts", "README.md", "LICENSE", "NOTICE"],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check bin/reach-mail.mjs && node --check src/mail.mjs && npm test"
+  }
+}

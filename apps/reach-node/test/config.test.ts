@@ -111,3 +111,45 @@ describe("loadConfig", () => {
     ).toThrow("must not contain user credentials");
   });
 });
+
+describe("server profile configuration", () => {
+  it("supports explicit server/desktop profiles and rejects unknown values", () => {
+    expect(loadConfig({ MCP_AUTH_TOKEN: "test", KRAKO_REACH_PROFILE: "server" }).reachConsoleEnabled).toBe(false);
+    expect(loadConfig({ MCP_AUTH_TOKEN: "test", KRAKO_REACH_PROFILE: "desktop" }).reachConsoleEnabled).toBe(true);
+    expect(() => loadConfig({ MCP_AUTH_TOKEN: "test", KRAKO_REACH_PROFILE: "other" })).toThrow("KRAKO_REACH_PROFILE");
+  });
+  it("requires an absolute optional mail directory", () => {
+    expect(loadConfig({ MCP_AUTH_TOKEN: "test" }).reachMailDirectory).toBeUndefined();
+    expect(loadConfig({ MCP_AUTH_TOKEN: "test", KRAKO_REACH_MAIL_DIR: "/srv/mail" }).reachMailDirectory).toBe("/srv/mail");
+    expect(() => loadConfig({ MCP_AUTH_TOKEN: "test", KRAKO_REACH_MAIL_DIR: "mail" })).toThrow("KRAKO_REACH_MAIL_DIR");
+  });
+});
+
+
+describe("shell defaults for headless services", () => {
+  it("uses Bash for server commands instead of an inherited login shell", () => {
+    for (const shell of [undefined, "", "/usr/sbin/nologin", "/missing/zsh", "/usr/bin/fish"]) {
+      expect(loadConfig({
+        MCP_AUTH_TOKEN: "test", KRAKO_REACH_PROFILE: "server", SHELL: shell,
+      }).defaultShell).toBe("/bin/bash");
+    }
+  });
+
+  it("respects an explicit command shell in either profile", () => {
+    for (const profile of ["server", "desktop"]) {
+      expect(loadConfig({
+        MCP_AUTH_TOKEN: "test", KRAKO_REACH_PROFILE: profile,
+        SHELL: "/usr/sbin/nologin", MCP_DEFAULT_SHELL: " /bin/sh ",
+      }).defaultShell).toBe("/bin/sh");
+    }
+  });
+
+  it("keeps the existing desktop login-shell choice", () => {
+    expect(loadConfig({
+      MCP_AUTH_TOKEN: "test", KRAKO_REACH_PROFILE: "desktop", SHELL: "/bin/zsh",
+    }).defaultShell).toBe("/bin/zsh");
+    expect(loadConfig({
+      MCP_AUTH_TOKEN: "test", KRAKO_REACH_PROFILE: "desktop",
+    }).defaultShell).toBe("/bin/bash");
+  });
+});

@@ -1,0 +1,65 @@
+name: Reach Reliability / Linux
+on:
+  pull_request:
+    paths:
+      - 'apps/reach-node/**'
+      - 'apps/reach-mail/**'
+      - 'bin/**'
+      - 'src/**'
+      - 'test/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'docs/LINUX_SETUP.md'
+      - '.github/workflows/reach-linux.yml'
+  push:
+    branches: [main, feat/linux-support]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Linux / ${{ matrix.os }} / Node ${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Verify both x64 server dist and a native ARM64 Linux package.
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
+        node: ['22', '24']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: apps/reach-node/package-lock.json
+      - name: Install build and test dependencies
+        working-directory: apps/reach-node
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: CLI and Linux installer checks
+        run: npm run check
+      - name: Seed a stale desktop build fixture
+        run: |
+          mkdir -p apps/reach-node/dist/src
+          printf 'stale desktop build fixture\n' > apps/reach-node/dist/src/window-control-arm64
+      - name: Fresh server build and Linux runtime checks
+        working-directory: apps/reach-node
+        run: npm run check:server
+      - name: Confirm no stale desktop helper remains
+        run: test ! -e apps/reach-node/dist/src/window-control-arm64
+      - name: Package standalone Linux runtime
+        run: node scripts/package-linux-preview.mjs --output-dir "$RUNNER_TEMP/reach-linux-package"
+      - name: Install and exercise the actual archive
+        shell: bash
+        run: |
+          linux_archives=("$RUNNER_TEMP/reach-linux-package/"*.tgz)
+          test "${#linux_archives[@]}" -eq 1
+          KORA_LINUX_TEST_ARCHIVE="${linux_archives[0]}" npm --prefix apps/reach-node run test:linux-package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-preview-${{ matrix.os }}-node${{ matrix.node }}
+          path: ${{ runner.temp }}/reach-linux-package/*
+          retention-days: 7
